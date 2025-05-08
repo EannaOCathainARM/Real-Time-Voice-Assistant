@@ -1,0 +1,26 @@
+# Gradle files
+.gradle/
+build/
+
+# Source downloaded and logs for speech recognition module
+stt/stt-src
+stt/download.log
+
+# Source downloaded and logs for large language models module
+llm/llm-src
+llm/download.log
+
+# Local configuration file (sdk path, etc)
+local.properties
+
+# IntelliJ
+*.iml
+.idea/
+
+# Android Studio generated files and folders
+captures/
+.externalNativeBuild/
+.cxx/
+*.apk
+output.json
+

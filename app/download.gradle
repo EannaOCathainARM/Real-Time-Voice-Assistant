@@ -1,0 +1,50 @@
+/*
+ * SPDX-FileCopyrightText: Copyright 2024-2025 Arm Limited and/or its affiliates <open-source-office@arm.com>
+ *
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
+/**
+ * Custom gradle tasks for application and tests - adb push to device for application run
+ */
+
+
+tasks.register('copySttModelsWithAdb') {
+    def localModelsFolder = file(project.ext.STT_MODELS_DIR).absolutePath
+    def deviceFolder = file(project.ext.DEVICE_FOLDER).absolutePath
+    def adbPushResourcesScript = file(project.ext.BASH_SCRIPT).absolutePath
+
+    doLast {
+        try {
+            println "Pushing model to device from " + localModelsFolder
+            exec { commandLine adbPushResourcesScript, localModelsFolder, deviceFolder }
+
+        } catch (ignored) {
+            println "Not able to adb push the resources"
+        }
+    }
+}
+
+preBuild.dependsOn copySttModelsWithAdb
+
+tasks.register('copyLlmModelsWithAdb') {
+    def localModelsFolder = file(project.ext.LLM_MODELS_DIR).absolutePath
+    def deviceFolder = file(project.ext.DEVICE_FOLDER).absolutePath
+    def adbPushResourcesScript = file(project.ext.BASH_SCRIPT).absolutePath
+    def localConfigFolder = file(project.ext.CONFIG_DIR).absolutePath
+
+    doLast {
+        try {
+            println "Pushing model to device from " + localModelsFolder
+            exec { commandLine adbPushResourcesScript, localModelsFolder, deviceFolder }
+
+            println "Pushing config file to device from " + localConfigFolder
+            exec { commandLine adbPushResourcesScript, localConfigFolder, deviceFolder }
+
+        } catch (ignored) {
+            println "Not able to adb push the resources"
+        }
+    }
+}
+
+preBuild.dependsOn copyLlmModelsWithAdb

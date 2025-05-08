@@ -1,0 +1,20 @@
+{
+  "modelTag": "\n Orbita:",
+  "stopWords": [
+    "Orbita:",
+    "User:",
+    "AI:",
+    "<|user|>",
+    "Assistant:",
+    "user:",
+    "[end of text]",
+    "<|endoftext|>",
+    "model:",
+    "Question:",
+    "\n\n",
+    "Consider the following scenario:\n"
+  ],
+  "llmModelName": "model.gguf",
+  "llmPrefix": "Transcript of a dialog, where the User interacts with an AI Assistant named Orbita.Orbita is helpful, polite, honest, good at writing and answers honestly and conciselyUser:",
+  "numThreads": 4
+}
