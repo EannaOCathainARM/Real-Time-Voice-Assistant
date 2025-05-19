@@ -27,6 +27,14 @@ subprojects {
                             "-DBUILD_JNI_LIB=ON",
                             "-DBUILD_UNIT_TESTS=OFF"
                         )
+
+                        //Check if KleidiAI needs to be disabled
+                        val kleidiAiDisabled = project.findProperty("kleidiAI") == "false"
+
+                        //Disable KleidiAI
+                        if (kleidiAiDisabled) {
+                            arguments += "-DGGML_CPU_KLEIDIAI=OFF"
+                        }
                     }
                 }
 

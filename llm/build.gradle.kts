@@ -16,14 +16,6 @@ android {
         externalNativeBuild {
             cmake {
                 targets += "arm-llm-jni"
-
-                //Check if KleidiAI needs to be disabled
-                val kleidiAiDisabled = project.findProperty("kleidiAI") == "false"
-
-                //Disable KleidiAI
-                if (kleidiAiDisabled) {
-                    arguments += "-DGGML_CPU_KLEIDIAI=OFF"
-                }
             }
         }
 
