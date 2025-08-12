@@ -9,7 +9,7 @@ package com.arm.voiceassistant.utils
 import android.annotation.SuppressLint
 import android.content.Context
 import android.util.Log
-import com.arm.llm.LlamaConfig
+import com.arm.LlmConfig
 import com.arm.stt.WhisperConfig
 import com.arm.voiceassistant.utils.Constants.VOICE_ASSISTANT_TAG
 import kotlin.concurrent.Volatile
@@ -36,31 +36,61 @@ class AppContext private constructor() {
 
 object Utils {
 
-    fun createDefaultConfig(modelPath: String): LlamaConfig
+    fun createDefaultConfig(modelPath: String, framework: String): LlmConfig
     {
-        val llmModelName = "model.gguf"
-        val stopWords: List<String> = mutableListOf(
-            "Orbita:", "User:", "AI:","<|user|>", "Assistant:","user:",
-            "[end of text]", "<|endoftext|>", "model:", "Question:", "\n\n",
-            "Consider the following scenario:\n"
-        )
-        val llmPrefix =
-            "Transcript of a dialog, where the User interacts with an AI Assistant named Orbita." +
-                    "Orbita is helpful, polite, honest, good at writing and answers honestly and concisely" +
-                    "User:"
+        val llmModelName: String
+        var userTag = ""
+        var endTag = ""
+        var stopWords:List<String> = mutableListOf()
+        var llmPrefix = ""
+        var modelTag = ""
+        var modelPointer = ""
 
-        val modelTag = " \n Orbita:"
-        val modelPointer = "$modelPath/$llmModelName"
+        if (framework == "llama.cpp") {
+            llmModelName = "llama.cpp/model.gguf"
+            userTag = ""
+            endTag = ""
+            stopWords= mutableListOf(
+                "Orbita:", "User:", "AI:", "<|user|>", "Assistant:", "user:",
+                "[end of text]", "<|endoftext|>", "model:", "Question:", "\n\n",
+                "Consider the following scenario:\n"
+            )
+            llmPrefix = "Transcript of a dialog, where the User interacts with an AI Assistant named Orbita." +
+                        "Orbita is helpful, polite, honest, good at writing and answers honestly and concisely" +
+                        "User:"
 
+            modelTag = " \n Orbita:"
+            modelPointer = "$modelPath/$llmModelName"
+
+        }
+        else if (framework == "onnxruntime-genai")
+        {
+            llmModelName = "onnxruntime-genai"
+            stopWords= mutableListOf(
+                "Orbita:", "User:", "AI:", "<|user|>", "Assistant:", "user:",
+                "[end of text]", "<|end|>" ,"<|endoftext|>", "model:", "Question:", "\n\n",
+                "Consider the following scenario:\n"
+            )
+            llmPrefix =
+                "<|system|>Transcript of a dialog, where the User interacts with an AI Assistant named Orbita." +
+                "Orbita is helpful, polite, honest, good at writing and answers honestly with a maximum of two sentences<|end|><|user|>"
+
+            modelTag = "<|assistant|>"
+            userTag = "<|user|>"
+            endTag = "<|end|>"
+            modelPointer = "$modelPath/$llmModelName"
+        }
         //Default number of thread
         val cores = Runtime.getRuntime().availableProcessors()
         val numThreads = if (cores >= 8) 4 else 2
 
-        return LlamaConfig(
+        return LlmConfig(
             modelTag,
             stopWords,
             modelPointer,
             llmPrefix,
+            userTag,
+            endTag,
             numThreads
         )
     }
@@ -93,7 +123,7 @@ object Utils {
     /**
      * Read configurations defined by User
      */
-    fun readUserConfig(file: File, modelPath: String): LlamaConfig {
+    fun readUserConfig(file: File, modelPath: String): LlmConfig {
         val content = file.readText()
         val jsonObject = JSONObject(content)
 
@@ -107,10 +137,12 @@ object Utils {
 
         val llmModelName = jsonObject.getString("llmModelName")
         val llmPrefix = jsonObject.getString("llmPrefix")
+        val llmUserTag = jsonObject.getString("userTag")
+        val llmEndTag = jsonObject.getString("endTag")
         val numThreads = jsonObject.getInt("numThreads")
         val modelPointer = "$modelPath/$llmModelName"
 
-        return LlamaConfig(modelTag, stopWords, modelPointer, llmPrefix, numThreads)
+        return LlmConfig(modelTag, stopWords, modelPointer, llmPrefix, llmUserTag, llmEndTag ,numThreads)
     }
 
     /**
@@ -182,16 +214,16 @@ object Utils {
      */
     fun createWhisperDefaultConfig() : WhisperConfig
     {
-        val printRealtime = true;
-        val printProgress = false;
+        val printRealtime = true
+        val printProgress = false
         val printTimeStamps = true
-        val printSpecial = false;
-        val translate = false;
-        val language = "en";
-        val numThreads = 4;
-        val offsetMs = 0;
-        val noContext = true;
-        val singleSegment = false;
+        val printSpecial = false
+        val translate = false
+        val language = "en"
+        val numThreads = 4
+        val offsetMs = 0
+        val noContext = true
+        val singleSegment = false
         return WhisperConfig(printRealtime, printProgress, printTimeStamps, printSpecial, translate,
             language, numThreads, offsetMs, noContext, singleSegment)
     }

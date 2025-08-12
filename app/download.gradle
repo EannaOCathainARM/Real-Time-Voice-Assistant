@@ -8,43 +8,80 @@
  * Custom gradle tasks for application and tests - adb push to device for application run
  */
 
+def localLlmModelsFolder = file(project.ext.LLM_MODELS_DIR).absolutePath
+def localSttModelsFolder = file(project.ext.STT_MODELS_DIR).absolutePath
+def deviceFolder = file(project.ext.DEVICE_FOLDER).absolutePath
+def adbPushResourcesScript = file(project.ext.PUSH_MODELS_PY).absolutePath
+def localConfigFolder = file(project.ext.CONFIG_DIR).absolutePath
+def llmFramework = rootProject.extensions.extraProperties.get("LLM_FRAMEWORK") as String
 
-tasks.register('copySttModelsWithAdb') {
-    def localModelsFolder = file(project.ext.STT_MODELS_DIR).absolutePath
-    def deviceFolder = file(project.ext.DEVICE_FOLDER).absolutePath
-    def adbPushResourcesScript = file(project.ext.BASH_SCRIPT).absolutePath
-
-    doLast {
-        try {
-            println "Pushing model to device from " + localModelsFolder
-            exec { commandLine adbPushResourcesScript, localModelsFolder, deviceFolder }
-
-        } catch (ignored) {
-            println "Not able to adb push the resources"
+/**
+ * Helper funtion to push model files to a connected device using adb.
+ *
+ * @param checkDir     Directory to check before pushing. Skips if it doesn't exist.
+ * @param pushFromPath Path to push from.
+ * @param label        Name for logging (e.g., "LLM", "STT", "Configs").
+ * @param extraArgs    Extra CLI args for the push script.
+ */
+def pushWithAdb = { File checkDir, String pushFromPath, String label, List<String> extraArgs ->
+    try {
+        if (!checkDir.exists()) {
+            println "Skipping ${label} model push: ${checkDir} does not exist"
+            return
         }
+        println "Pushing ${label} models from ${pushFromPath}" + (label == "LLM" ? " (framework: ${llmFramework})" : "")
+        exec {
+            commandLine(["python3", adbPushResourcesScript, pushFromPath, deviceFolder] + (extraArgs ?: []))
+        }
+    } catch (ignored) {
+        println "Failed to push ${label} models to device"
     }
 }
 
-preBuild.dependsOn copySttModelsWithAdb
-
-tasks.register('copyLlmModelsWithAdb') {
-    def localModelsFolder = file(project.ext.LLM_MODELS_DIR).absolutePath
-    def deviceFolder = file(project.ext.DEVICE_FOLDER).absolutePath
-    def adbPushResourcesScript = file(project.ext.BASH_SCRIPT).absolutePath
-    def localConfigFolder = file(project.ext.CONFIG_DIR).absolutePath
+// Push LLM models after native CMake build
+tasks.register("copyLlmModelsWithAdb") {
+    group = "model-sync"
+    description = "Pushes LLM models to device after native build"
 
     doLast {
-        try {
-            println "Pushing model to device from " + localModelsFolder
-            exec { commandLine adbPushResourcesScript, localModelsFolder, deviceFolder }
-
-            println "Pushing config file to device from " + localConfigFolder
-            exec { commandLine adbPushResourcesScript, localConfigFolder, deviceFolder }
-
-        } catch (ignored) {
-            println "Not able to adb push the resources"
-        }
+        def checkDir = new File(localLlmModelsFolder, llmFramework)
+        pushWithAdb(checkDir, localLlmModelsFolder, "LLM", ["--llm_framework", llmFramework])
     }
 }
 
-preBuild.dependsOn copyLlmModelsWithAdb
+// Push STT models after native CMake build
+tasks.register("copySttModelsWithAdb") {
+    group = "model-sync"
+    description = "Pushes STT models to device after native build"
+
+    doLast {
+        def checkDir = new File(localSttModelsFolder)
+        pushWithAdb(checkDir, localSttModelsFolder, "STT", [])
+    }
+}
+
+// Push config files after both model pushes
+tasks.register("copyConfigsWithAdb") {
+    group = "model-sync"
+    description = "Pushes configuration files to device after models"
+
+    doLast {
+        def checkDir = new File(localConfigFolder)
+        pushWithAdb(checkDir, localConfigFolder, "Configs", [])
+    }
+}
+
+// Run LLM model push after assemble task
+tasks.matching { it.name.startsWith("assemble") }.configureEach {
+    finalizedBy("copyLlmModelsWithAdb")
+}
+
+// Run STT model push after LLM push
+tasks.named("copyLlmModelsWithAdb") {
+    finalizedBy("copySttModelsWithAdb")
+}
+
+// Run config push after STT push
+tasks.named("copySttModelsWithAdb") {
+    finalizedBy("copyConfigsWithAdb")
+}

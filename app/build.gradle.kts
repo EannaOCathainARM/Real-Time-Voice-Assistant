@@ -13,8 +13,7 @@ project.ext.set("STT_MODELS_DIR", "$projectDir/../stt/stt-src/resources_download
 project.ext.set("LLM_MODELS_DIR", "$projectDir/../llm/llm-src/resources_downloaded/models/")
 project.ext.set("CONFIG_DIR", "$projectDir/src/model_configuration_files/")
 project.ext.set("DEVICE_FOLDER", "/storage/emulated/0/Android/data/com.arm.voiceassistant/files/Download/")
-project.ext.set("BASH_SCRIPT", "$projectDir/pushModels.sh")
-
+project.ext.set("PUSH_MODELS_PY", "$projectDir/pushModels.py")
 
 apply("download.gradle")
 

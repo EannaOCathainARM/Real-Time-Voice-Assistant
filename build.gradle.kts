@@ -10,6 +10,8 @@ plugins {
     alias(libs.plugins.kotlin.android) apply false
 }
 
+apply(from = rootProject.file("llm-config.gradle.kts"))
+
 subprojects {
     // Only apply this configuration if the subproject applies the Android library plugin.
     plugins.withId("com.android.library") {
@@ -20,12 +22,15 @@ subprojects {
             defaultConfig {
                 minSdk = 33
 
+                //Set the minimum version for NDK, onnxruntime needs min:r27
+                ndkVersion = "27.0.12077973"
+
                 externalNativeBuild {
                     cmake {
                         arguments(
                             "-DBUILD_SHARED_LIBS=OFF",
                             "-DBUILD_JNI_LIB=ON",
-                            "-DBUILD_UNIT_TESTS=OFF"
+                            "-DBUILD_UNIT_TESTS=OFF",
                         )
 
                         //Check if KleidiAI needs to be disabled
@@ -33,7 +38,7 @@ subprojects {
 
                         //Disable KleidiAI
                         if (kleidiAiDisabled) {
-                            arguments += "-DGGML_CPU_KLEIDIAI=OFF"
+                            arguments += "-DUSE_KLEIDIAI=OFF"
                         }
                     }
                 }

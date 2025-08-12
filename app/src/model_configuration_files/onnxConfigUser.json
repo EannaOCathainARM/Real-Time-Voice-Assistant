@@ -1,0 +1,22 @@
+{
+  "modelTag": "<|assistant|>",
+  "userTag": "<|user|>",
+  "endTag" : "<|end|>",
+  "stopWords": [
+    "Orbita:",
+    "User:",
+    "AI:",
+    "<|user|>",
+    "Assistant:",
+    "user:",
+    "[end of text]",
+    "<|endoftext|>",
+    "model:",
+    "Question:",
+    "<|end|>",
+    "Consider the following scenario:\n"
+  ],
+  "llmModelName": "onnxruntime-genai",
+  "llmPrefix": "<|system|>Transcript of a dialog, where the User interacts with an AI Assistant named Orbita. Orbita is helpful, polite, honest, good at writing and answers honestly with a maximum of two sentences<|end|><|user|>",
+  "numThreads": 5
+}

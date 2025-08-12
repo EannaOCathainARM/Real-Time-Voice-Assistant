@@ -16,6 +16,7 @@
     * [Large Language Models Library](#large-language-models-library)
     * [Text to Speech Component](#text-to-speech-component)
   * [KleidiAI Configuration](#kleidiai-configuration)
+  * [LLM Framework](#llm-framework)
   * [Custom LLM Configuration](#custom-llm-configuration)
   * [Custom STT Configuration](#custom-stt-configuration)
   * [Resources](#resources)
@@ -39,7 +40,8 @@ for optimized performance on Arm® CPU.
 ## Pre-requisites
 
 1. Download and install the latest version of [Android Studio](https://developer.android.com/studio)
-2. Install the [Android NDK](https://developer.android.com/studio/projects/install-ndk). This project was tested with Android NDK r25.
+2. Install the [Android NDK](https://developer.android.com/studio/projects/install-ndk). This project was tested with Android NDK r27.
+3. Python 3 must be installed. It is used to push resources and model files to the device.
 
 ## Dependencies
 
@@ -110,10 +112,28 @@ To override these defaults, simply adjust the build flag:
 * To disable KleidiAI, use `-PkleidiAI=false`.
 * To enable KleidiAI on an ABI where it is disabled by default, use `-PkleidiAI=true`.
 
+## LLM Framework
+
+The application supports multiple LLM backend frameworks. You can choose the desired backend at build
+time using the `llmFramework` Gradle property.
+
+Available options:
+* `llama.cpp` (default)
+* `onnxruntime-genai`
+
+You can specify the framework when building the app from the command line:
+> ./gradlew assembleRelease -PllmFramework=onnxruntime-genai
+
+If no value is provided, the default is used.
+> **NOTE**: The default value is defined in [gradle properties](gradle.properties) and can be modified
+> if a different framework is preferred by default.
+
 ## Custom LLM Configuration
 
-In addition to the default settings, this application allows you to provide custom configuration parameters for the LLM via a JSON-formatted file named `app/src/model_configuration_files/llamaConfigUser.json`. This file must contain the following mandatory keys:
+In addition to the default settings, this application allows you to provide custom configuration parameters for the LLM via a JSON-formatted file named `app/src/model_configuration_files/{LLM Framework Name}ConfigUser.json`. This file must contain the following mandatory keys:
 * `modelTag`: A string used as an identifier or tag for the model.
+* `userTag`: A string used as tag for the user.
+* `endTag`: A string used as tag to mark the end of the query.
 * `stopWords`: An array of strings. These words or tokens indicate when the LLM should stop generating text.
 * `llmModelName`: The filename of the LLM model to be used.
 * `llmPrefix`: A string acting as a prefix to the input text, typically providing context or instructions for the model.
@@ -140,7 +160,7 @@ You only need to modify the values associated with these keys if you wish to cus
 ## Resources
 
 The STT and LLM modules automatically download the required neural network models during the build process.
-These models are then deployed to the device for processing voice commands and generating responses with a [push models script](app/pushModels.sh)
+These models are then deployed to the device for processing voice commands and generating responses with a [push models script](app/pushModels.py)
 
 ## Tested Devices
 

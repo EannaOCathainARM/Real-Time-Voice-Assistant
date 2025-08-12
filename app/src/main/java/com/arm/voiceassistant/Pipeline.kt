@@ -7,7 +7,7 @@
 package com.arm.voiceassistant
 
 import android.util.Log
-import com.arm.llm.Llama
+import com.arm.Llm
 import com.arm.stt.Whisper
 import com.arm.stt.WhisperConfig
 import com.arm.voiceassistant.audio.AudioReader
@@ -45,7 +45,7 @@ class Pipeline(modelPath: String, isTest: Boolean = false) {
 
     private var stt = Whisper()
 
-    private var llama = Llama()
+    private var llm = Llm()
 
     private var llmInitialized = false
 
@@ -56,8 +56,15 @@ class Pipeline(modelPath: String, isTest: Boolean = false) {
     // Generator of speech
     private var speechSynthesis = SpeechSynthesis()
 
-    // User config file name
-    private var configFileName = "llamaConfigUser.json"
+    // Selected llm framework
+    private var llmFramework = llm.frameworkType
+
+    // User config file for llm, default is llama.cpp
+    private var configFileName: String = when (llmFramework) {
+        "llama.cpp" -> "llamaConfigUser.json"
+        "onnxruntime-genai" -> "onnxConfigUser.json"
+        else -> "llamaConfigUser.json"
+    }
 
     // User config file name stt
     private var configFileNameSTT = "whisperConfigUser.json"
@@ -81,7 +88,7 @@ class Pipeline(modelPath: String, isTest: Boolean = false) {
                     whisperParams = createWhisperDefaultConfig()
                 }
                 // Initialize stt parameters
-                stt.initParameters(whisperParams);
+                stt.initParameters(whisperParams)
 
                 // User llm config file
                 val configFile = File("$modelPath/$configFileName")
@@ -91,11 +98,11 @@ class Pipeline(modelPath: String, isTest: Boolean = false) {
                         // Read and check the given llm config file
                         if (isValidConfig(configFile)) {
                             // Initialize the llm with user config file
-                            llama.llmInit(readUserConfig(configFile, modelPath))
+                            llm.llmInit(readUserConfig(configFile, modelPath))
                             llmInitialized = true
                         }
                     } catch (e: Exception) {
-                        Log.w(VOICE_ASSISTANT_TAG, "Model initialization with llamaConfigUser.txt phase failed. Default configs will be created", e)
+                        Log.w(VOICE_ASSISTANT_TAG, "Model initialization with user config phase failed. Default configs will be created", e)
                     }
                 }
                 else {
@@ -105,7 +112,7 @@ class Pipeline(modelPath: String, isTest: Boolean = false) {
                 if(!llmInitialized)
                 {
                     // If user llm can't be initialized with user config file, initialize with the default config file
-                    llama.llmInit(createDefaultConfig(modelPath))
+                    llm.llmInit(createDefaultConfig(modelPath, llmFramework))
                 }
 
                 llmInitialized = true
@@ -184,14 +191,14 @@ class Pipeline(modelPath: String, isTest: Boolean = false) {
      * Return encode speed for backend LLM
      */
     fun getEncodeTokensPerSec(): Float {
-        return llama.encodeRate
+        return llm.encodeRate
     }
 
     /**
      * Return decode speed for backend LLM
      */
     fun getDecodeTokensPerSec(): Float {
-        return llama.decodeRate
+        return llm.decodeRate
     }
 
     /**
@@ -231,7 +238,7 @@ class Pipeline(modelPath: String, isTest: Boolean = false) {
      */
     suspend fun generateResponse(query: String): String = withContext(Dispatchers.Default)
     {
-        val response: String = llama.send(query)
+        val response: String = llm.send(query)
         return@withContext response
     }
 
@@ -240,7 +247,7 @@ class Pipeline(modelPath: String, isTest: Boolean = false) {
      */
     fun resetContext() {
         runBlocking {
-            llama.resetContext()
+            llm.resetContext()
         }
         speechSynthesis.clearResponses()
     }
@@ -258,7 +265,7 @@ class Pipeline(modelPath: String, isTest: Boolean = false) {
      */
     suspend fun generateResponseTokens(transcription: String) {
         withContext(Dispatchers.Default) {
-            llama.sendAsync(transcription)
+            llm.sendAsync(transcription)
         }
     }
 
@@ -284,6 +291,6 @@ class Pipeline(modelPath: String, isTest: Boolean = false) {
     }
 
     fun setSubscriber(subscriber: ResponseSubscriber) {
-        llama.setSubscriber(subscriber)
+        llm.setSubscriber(subscriber)
     }
 }

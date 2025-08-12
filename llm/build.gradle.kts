@@ -16,6 +16,11 @@ android {
         externalNativeBuild {
             cmake {
                 targets += "arm-llm-jni"
+
+                val llmFramework = rootProject.extensions.extraProperties.get("LLM_FRAMEWORK") as String
+                logger.lifecycle("Using LLM framework: $llmFramework")
+
+                arguments += "-DLLM_FRAMEWORK=$llmFramework"
             }
         }
 
