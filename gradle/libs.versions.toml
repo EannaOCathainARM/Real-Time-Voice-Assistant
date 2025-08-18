@@ -13,6 +13,7 @@ coreKtx = "1.12.0"
 composeUi = "1.7.0"
 espressoCore = "3.6.1"
 googleAccompanistPermissions = "0.34.0"
+gson = "2.10.1"
 junit = "4.13.2"
 junitVersion = "1.1.5"
 kotlin = "1.9.0"
@@ -42,6 +43,7 @@ androidx-ui-test-manifest = { group = "androidx.compose.ui", name = "ui-test-man
 androidx-ui-tooling = { group = "androidx.compose.ui", name = "ui-tooling", version.ref="composeUi" }
 androidx-ui-tooling-preview = { group = "androidx.compose.ui", name = "ui-tooling-preview", version.ref="composeUi" }
 google-accompanist-permissions = { group = "com.google.accompanist", name = "accompanist-permissions", version.ref = "googleAccompanistPermissions" }
+google-gson = { group = "com.google.code.gson", name = "gson", version.ref = "gson"}
 junit = { group = "junit", name = "junit", version.ref = "junit" }
 mockito-android = { module = "org.mockito:mockito-android", version.ref = "mockitoAndroid" }
 

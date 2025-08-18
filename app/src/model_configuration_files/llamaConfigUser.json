@@ -1,7 +1,8 @@
 {
-  "modelTag": "\n Orbita:",
+  "modelTag": "\\nOrbita:",
   "userTag": "",
   "endTag" : "",
+  "llmPrefix": "Transcript of a dialog, where the User interacts with an AI Assistant named Orbita. Orbita is helpful, polite, honest, good at writing and answers honestly with a maximum of two sentences.User:",
   "stopWords": [
     "Orbita:",
     "User:",
@@ -14,10 +15,10 @@
     "model:",
     "Question:",
     "<|end|>",
-    "\n\n",
-    "Consider the following scenario:\n"
+    "\\n\\n",
+    "Consider the following scenario:\\n"
   ],
   "llmModelName": "llama.cpp/model.gguf",
-  "llmPrefix": "Transcript of a dialog, where the User interacts with an AI Assistant named Orbita.Orbita is helpful, polite, honest, good at writing and answers honestly and conciselyUser:",
+  "batchSize" : 256,
   "numThreads": 5
 }

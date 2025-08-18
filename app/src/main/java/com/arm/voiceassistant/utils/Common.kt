@@ -9,9 +9,10 @@ package com.arm.voiceassistant.utils
 import android.annotation.SuppressLint
 import android.content.Context
 import android.util.Log
-import com.arm.LlmConfig
 import com.arm.stt.WhisperConfig
 import com.arm.voiceassistant.utils.Constants.VOICE_ASSISTANT_TAG
+import com.google.gson.Gson
+import com.google.gson.JsonSyntaxException
 import kotlin.concurrent.Volatile
 import java.io.File
 import org.json.JSONObject
@@ -36,61 +37,69 @@ class AppContext private constructor() {
 
 object Utils {
 
-    fun createDefaultConfig(modelPath: String, framework: String): LlmConfig
+    data class UserLlmConfig(
+        val modelTag: String,
+        val userTag: String,
+        val endTag: String,
+        val llmPrefix: String,
+        val stopWords: List<String>,
+        val llmModelName: String,
+        val batchSize: Int,
+        val numThreads: Int
+    )
+
+    fun createLlmDefaultConfig(modelPath: String, framework: String): UserLlmConfig
     {
         val llmModelName: String
         var userTag = ""
         var endTag = ""
-        var stopWords:List<String> = mutableListOf()
+        var stopWords:List<String> = mutableListOf(
+            "Orbita:", "User:", "AI:", "<|user|>", "Assistant:", "user:",
+            "[end of text]", "<|endoftext|>", "model:", "Question:", "\n\n",
+            "Consider the following scenario:\n"
+        )
         var llmPrefix = ""
         var modelTag = ""
         var modelPointer = ""
+        var batchSize = 1
+
+        val transcript = "Transcript of a dialog, where the User interacts with an AI Assistant named Orbita."
+
 
         if (framework == "llama.cpp") {
             llmModelName = "llama.cpp/model.gguf"
-            userTag = ""
-            endTag = ""
-            stopWords= mutableListOf(
-                "Orbita:", "User:", "AI:", "<|user|>", "Assistant:", "user:",
-                "[end of text]", "<|endoftext|>", "model:", "Question:", "\n\n",
-                "Consider the following scenario:\n"
-            )
-            llmPrefix = "Transcript of a dialog, where the User interacts with an AI Assistant named Orbita." +
-                        "Orbita is helpful, polite, honest, good at writing and answers honestly and concisely" +
-                        "User:"
 
+            llmPrefix = transcript + "Orbita is helpful, polite, honest, good at writing and answers honestly with a maximum of two sentences" + "User:"
             modelTag = " \n Orbita:"
             modelPointer = "$modelPath/$llmModelName"
+            batchSize = 256
 
         }
         else if (framework == "onnxruntime-genai")
         {
             llmModelName = "onnxruntime-genai"
-            stopWords= mutableListOf(
-                "Orbita:", "User:", "AI:", "<|user|>", "Assistant:", "user:",
-                "[end of text]", "<|end|>" ,"<|endoftext|>", "model:", "Question:", "\n\n",
-                "Consider the following scenario:\n"
-            )
+            stopWords= stopWords.plus("<|end|>")
             llmPrefix =
-                "<|system|>Transcript of a dialog, where the User interacts with an AI Assistant named Orbita." +
-                "Orbita is helpful, polite, honest, good at writing and answers honestly with a maximum of two sentences<|end|><|user|>"
+                "<|system|>${transcript}Orbita is helpful, polite, honest, good at writing and answers honestly with a maximum of two sentences<|end|><|user|>"
 
             modelTag = "<|assistant|>"
             userTag = "<|user|>"
             endTag = "<|end|>"
             modelPointer = "$modelPath/$llmModelName"
+            batchSize = 1
         }
         //Default number of thread
         val cores = Runtime.getRuntime().availableProcessors()
         val numThreads = if (cores >= 8) 4 else 2
 
-        return LlmConfig(
+        return UserLlmConfig(
             modelTag,
-            stopWords,
-            modelPointer,
-            llmPrefix,
             userTag,
             endTag,
+            llmPrefix,
+            stopWords,
+            modelPointer,
+            batchSize,
             numThreads
         )
     }
@@ -98,51 +107,44 @@ object Utils {
     /**
      * Check if config file is valid
      */
-    fun isValidConfig(file: File): Boolean {
+    fun isValidLlmConfig(file: File): Boolean {
         return try {
             val content = file.readText()
             if (content.isBlank()) return false
 
-            val jsonObject = JSONObject(content)
-            // TO-DO: Checks can be amended
-            // Check if required keys exist and have valid values.
-            jsonObject.has("modelTag") &&
-                    jsonObject.has("stopWords") &&
-                    jsonObject.has("llmModelName") &&
-                    jsonObject.has("llmPrefix") &&
-                    jsonObject.has("numThreads") &&
-                    jsonObject.getString("llmModelName").isNotEmpty() &&
-                    jsonObject.getInt("numThreads") > 0 &&
-                    jsonObject.getInt("numThreads") <= Runtime.getRuntime().availableProcessors()
+            val config = Gson().fromJson(content, UserLlmConfig::class.java)
+
+            config != null &&
+                    config.modelTag.isNotBlank() &&
+                    config.llmModelName.isNotBlank() &&
+                    config.llmPrefix.isNotBlank() &&
+                    config.stopWords.isNotEmpty() &&
+                    config.numThreads > 0 &&
+                    config.numThreads <= Runtime.getRuntime().availableProcessors()
+        } catch (e: JsonSyntaxException) {
+            Log.e(VOICE_ASSISTANT_TAG, "Invalid configuration JSON syntax", e)
+            false
         } catch (e: Exception) {
-            Log.e(VOICE_ASSISTANT_TAG, "Invalid configuration file: missing or invalid configuration values.", e)
+            Log.e(VOICE_ASSISTANT_TAG, "Invalid configuration file", e)
             false
         }
     }
 
     /**
-     * Read configurations defined by User
+     * Read LLM configurations defined by User
      */
-    fun readUserConfig(file: File, modelPath: String): LlmConfig {
-        val content = file.readText()
-        val jsonObject = JSONObject(content)
-
-        val modelTag = jsonObject.getString("modelTag")
-
-        val stopWordsJsonArray = jsonObject.getJSONArray("stopWords")
-        val stopWords = mutableListOf<String>()
-        for (i in 0 until stopWordsJsonArray.length()) {
-            stopWords.add(stopWordsJsonArray.getString(i))
+    fun readLlmUserConfig(file: File, modelPath: String): JSONObject? {
+        try {
+            val content = file.readText()
+            val gson = Gson()
+            val userLlmConfig: UserLlmConfig = gson.fromJson(content, UserLlmConfig::class.java)
+            val configJson = JSONObject(gson.toJson(userLlmConfig))
+            configJson.put("llmModelName", modelPath + "/" + configJson.getString("llmModelName"))
+            return configJson
+        } catch (e : Exception) {
+            Log.e(VOICE_ASSISTANT_TAG, "User configuration issue: $e")
+            return null
         }
-
-        val llmModelName = jsonObject.getString("llmModelName")
-        val llmPrefix = jsonObject.getString("llmPrefix")
-        val llmUserTag = jsonObject.getString("userTag")
-        val llmEndTag = jsonObject.getString("endTag")
-        val numThreads = jsonObject.getInt("numThreads")
-        val modelPointer = "$modelPath/$llmModelName"
-
-        return LlmConfig(modelTag, stopWords, modelPointer, llmPrefix, llmUserTag, llmEndTag ,numThreads)
     }
 
     /**

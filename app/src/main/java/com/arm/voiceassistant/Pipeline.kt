@@ -17,12 +17,12 @@ import com.arm.voiceassistant.subscribers.ResponseSubscriber
 import com.arm.voiceassistant.utils.Constants
 import com.arm.voiceassistant.utils.Constants.VOICE_ASSISTANT_TAG
 import com.arm.voiceassistant.utils.Utils
-import com.arm.voiceassistant.utils.Utils.createDefaultConfig
+import com.arm.voiceassistant.utils.Utils.createLlmDefaultConfig
 import com.arm.voiceassistant.utils.Utils.createWhisperDefaultConfig
-import com.arm.voiceassistant.utils.Utils.isValidConfig
-import com.arm.voiceassistant.utils.Utils.readUserConfig
+import com.arm.voiceassistant.utils.Utils.isValidLlmConfig
 import com.arm.voiceassistant.utils.Utils.readWhisperUserConfig
 import com.arm.voiceassistant.utils.Utils.isValidWhisperConfig
+import com.arm.voiceassistant.utils.Utils.readLlmUserConfig
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withContext
@@ -96,9 +96,9 @@ class Pipeline(modelPath: String, isTest: Boolean = false) {
                 if (configFile.exists()) {
                     try {
                         // Read and check the given llm config file
-                        if (isValidConfig(configFile)) {
+                        if (isValidLlmConfig(configFile)) {
                             // Initialize the llm with user config file
-                            llm.llmInit(readUserConfig(configFile, modelPath))
+                            llm.llmInit(readLlmUserConfig(configFile, modelPath).toString())
                             llmInitialized = true
                         }
                     } catch (e: Exception) {
@@ -112,7 +112,7 @@ class Pipeline(modelPath: String, isTest: Boolean = false) {
                 if(!llmInitialized)
                 {
                     // If user llm can't be initialized with user config file, initialize with the default config file
-                    llm.llmInit(createDefaultConfig(modelPath, llmFramework))
+                    llm.llmInit(createLlmDefaultConfig(modelPath, llmFramework).toString())
                 }
 
                 llmInitialized = true
