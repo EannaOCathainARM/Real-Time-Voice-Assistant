@@ -76,8 +76,8 @@ fun MainScreen(
     // Collect state
     val uiState by viewModel.uiState.collectAsState()
     val messages = viewModel.messages
-
-
+    val toastFlow = viewModel.toastMessages
+    var currentToast by remember { mutableStateOf("") }
     val listState = rememberLazyListState()
 
     LaunchedEffect(uiState.responseText, messages.size) {
@@ -91,6 +91,21 @@ fun MainScreen(
             messages.add(ChatMessage.AssistantText("Hi!\nI'm your AI assistant. How can I help you?"))
         }
     }
+
+
+    LaunchedEffect(Unit) {
+        viewModel.toastMessages.collect { message ->
+            currentToast = message
+        }
+    }
+
+    if (currentToast.isNotEmpty()) {
+        TopToast(
+            message = currentToast,
+            onDismiss = { currentToast = "" }
+        )
+    }
+
 
     var openConfirmationDialog by remember { mutableStateOf(false) }
 
@@ -134,101 +149,113 @@ fun MainScreen(
             )
         )
     }
-
-    Column(
-        modifier = backgroundModifier
-            .fillMaxSize()
-            .padding(horizontal = 16.dp, vertical = 16.dp)
-            .padding(top = 20.dp),
-        horizontalAlignment = Alignment.CenterHorizontally
+    Box(
+        modifier = Modifier.fillMaxSize()
     ) {
-        if (uiState.displayPerformance) {
-            Box(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(top = 12.dp, bottom = 6.dp)
-                    .height(IntrinsicSize.Min)
-            ) {
-                ModelMetrics(
-                    model1metric = uiState.sttTime,
-                    model2metric = uiState.llmEncodeTPS,
-                    model3metric = uiState.llmDecodeTPS
-                )
+        Column(
+            modifier = backgroundModifier
+                .fillMaxSize()
+                .padding(horizontal = 16.dp, vertical = 16.dp)
+                .padding(top = 20.dp),
+            horizontalAlignment = Alignment.CenterHorizontally
+        ) {
+            if (uiState.displayPerformance) {
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(top = 12.dp, bottom = 6.dp)
+                        .height(IntrinsicSize.Min)
+                ) {
+                    ModelMetrics(
+                        model1metric = uiState.sttTime,
+                        model2metric = uiState.llmEncodeTPS,
+                        model3metric = uiState.llmDecodeTPS
+                    )
+                }
+
+                Spacer(modifier = Modifier.height(10.dp))
             }
 
-            Spacer(modifier = Modifier.height(10.dp))
-        }
+            // Chat history
+            if (messages.size == 1 && messages.first() is ChatMessage.AssistantText) {
+                Column(
+                    modifier = Modifier
+                        .weight(1f)
+                        .fillMaxWidth(),
+                    verticalArrangement = Arrangement.Center,
+                    horizontalAlignment = Alignment.Start
+                ) {
+                    Text(
+                        text = "Voice Assistant",
+                        fontSize = 16.sp,
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onBackground,
+                        modifier = Modifier.padding(start = 12.dp, bottom = 2.dp)
+                    )
 
-        // Chat history
-        if (messages.size == 1 && messages.first() is ChatMessage.AssistantText) {
-            Column(
-                modifier = Modifier
-                    .weight(1f)
-                    .fillMaxWidth(),
-                verticalArrangement = Arrangement.Center,
-                horizontalAlignment = Alignment.Start
-            ) {
-                Text(
-                    text = "Voice Assistant",
-                    fontSize = 16.sp,
-                    style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.onBackground,
-                    modifier = Modifier.padding(start = 12.dp, bottom = 2.dp)
-                )
+                    AssistantBubble(text = (messages.first() as ChatMessage.AssistantText).text)
+                }
+            } else {
+                // Normal message history
+                LazyColumn(
+                    state = listState,
+                    modifier = Modifier
+                        .weight(1f)
+                        .fillMaxWidth()
+                        .padding(vertical = 8.dp),
+                    verticalArrangement = Arrangement.spacedBy(10.dp)
+                ) {
 
-                AssistantBubble(text = (messages.first() as ChatMessage.AssistantText).text)
-            }
-        } else {
-            // Normal message history
-            LazyColumn(
-                state = listState,
-                modifier = Modifier
-                    .weight(1f)
-                    .fillMaxWidth()
-                    .padding(vertical = 8.dp),
-                verticalArrangement = Arrangement.spacedBy(10.dp)
-            ) {
+                    items(messages /*, key = { it.id } if you have one */) { message ->
+                        when (message) {
+                            is ChatMessage.UserText -> MessageItem(label = "User", isUser = true) {
+                                UserBubble(text = message.text)
+                            }
 
-                items(messages /*, key = { it.id } if you have one */) { message ->
-                    when (message) {
-                        is ChatMessage.UserText -> MessageItem(label = "User", isUser = true) {
-                            UserBubble(text = message.text)
-                        }
+                            is ChatMessage.UserImage -> MessageItem(label = "User", isUser = true) {
+                                UserImageBubble(uri = message.uri)
+                            }
 
-                        is ChatMessage.UserImage -> MessageItem(label = "User", isUser = true) {
-                            UserImageBubble(uri = message.uri)
-                        }
-
-                        is ChatMessage.AssistantText -> MessageItem(
-                            label = "Voice Assistant",
-                            isUser = false
-                        ) {
-                            AssistantBubble(text = message.text)
+                            is ChatMessage.AssistantText -> MessageItem(
+                                label = "Voice Assistant",
+                                isUser = false
+                            ) {
+                                AssistantBubble(text = message.text)
+                            }
                         }
                     }
                 }
             }
+
+            Spacer(modifier = Modifier.height(10.dp))
+
+            CombinedActionRow(
+                contentState = uiState.contentState,
+                timerText = uiState.recTime,
+                animateIcon = uiState.contentState == Constants.ContentStates.Recording,
+                onClickStartRecording = {
+                    when (recordingPermissionState.status) {
+                        PermissionStatus.Granted -> viewModel.onStartRecording()
+                        else -> launcher.launch(Manifest.permission.RECORD_AUDIO)
+                    }
+                },
+                onClickStopRecording = { viewModel.onStopRecording() },
+                onClickCancelRecording = { openConfirmationDialog = true },
+                onClickCancel = { viewModel.cancelPipeline() },
+                onAddImage = { uri -> viewModel.addImage(uri) },
+                showImageButton = viewModel.imageUploadEnabled
+            )
+
+            Spacer(modifier = Modifier.height(16.dp))
         }
-
-        Spacer(modifier = Modifier.height(10.dp))
-
-        CombinedActionRow(
-            contentState = uiState.contentState,
-            timerText = uiState.recTime,
-            animateIcon = uiState.contentState == Constants.ContentStates.Recording,
-            onClickStartRecording = {
-                when (recordingPermissionState.status) {
-                    PermissionStatus.Granted -> viewModel.onStartRecording()
-                    else -> launcher.launch(Manifest.permission.RECORD_AUDIO)
-                }
-            },
-            onClickStopRecording = { viewModel.onStopRecording() },
-            onClickCancelRecording = { openConfirmationDialog = true },
-            onClickCancel = { viewModel.cancelPipeline() },
-            onAddImage = { uri -> viewModel.addImage(uri) },
-            showImageButton = viewModel.imageUploadEnabled
-        )
-
-        Spacer(modifier = Modifier.height(16.dp))
+        if (currentToast.isNotEmpty()) {
+            TopToast(
+                message = currentToast,
+                onDismiss = { currentToast = "" },
+                modifier = Modifier
+                    .align(Alignment.TopCenter) // ✅ position at the top of screen
+            )
+        }
     }
+
 }

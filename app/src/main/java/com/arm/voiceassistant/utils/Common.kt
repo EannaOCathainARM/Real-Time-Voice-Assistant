@@ -14,6 +14,7 @@ import com.google.gson.JsonSyntaxException
 import kotlin.concurrent.Volatile
 import java.io.File
 import org.json.JSONObject
+import java.util.Objects.toString
 
 /**
  * Container for the context which is needed by one of the LLMs
@@ -91,7 +92,6 @@ object Utils {
             systemTemplate = "<|im_start|>system\n%s<|im_end|>\n"
             userTemplate =  "<|im_start|>user\n%s<|im_end|>\n<|im_start|>assistant\n"
             batchSize = 256
-
             modelPointer = "$modelPath/$llmModelName"
             projPointer = "$modelPath/$llmMmProjModelName"
         }
@@ -103,7 +103,8 @@ object Utils {
             applyDefaultChatTemplate = false
             systemPrompt = "You are a helpful and factual AI assistant named Orbita. Orbita answers with maximum of two sentences."
             systemTemplate = "<|system|>%s<|end|>"
-            userTemplate =  "<|im_start|>user\n%s<|im_end|>\n<|im_start|>assistant\n"
+
+            userTemplate =  "<|user|>%s<|end|><|assistant|>"
             batchSize = 1
             modelPointer = "$modelPath/$llmModelName"
         }
@@ -146,31 +147,33 @@ object Utils {
      * @return An [UserLlmConfig] constructed from the file's contents
      */
     fun readLlmUserConfig(file: File, modelPath: String): JSONObject? {
-        try {
+        return try {
             val content = file.readText()
             val gson = Gson()
             val userLlmConfig: UserLlmConfig = gson.fromJson(content, UserLlmConfig::class.java)
             val configJson = JSONObject(gson.toJson(userLlmConfig))
 
             // Update model paths
-            val modelJsonEncoding = configJson.getJSONObject("model")
-            val llmModelName = modelJsonEncoding.getString("llmModelName")
-            val llmModelPath = "$modelPath/$llmModelName"
-            modelJsonEncoding.put("llmModelName", llmModelPath)
-            Log.d(VOICE_ASSISTANT_TAG,modelJsonEncoding.getString("llmModelName"))
 
-            if (modelJsonEncoding.has("projModelName") && !modelJsonEncoding.isNull("projModelName")) {
-                val projModelName = modelJsonEncoding.getString("projModelName")
-                val projModelPath = "$modelPath/$projModelName"
-                modelJsonEncoding.put("projModelName", projModelPath)
-                Log.i(VOICE_ASSISTANT_TAG,"LLM model Path $projModelPath")
+            val modelObj = configJson.getJSONObject("model")
+            modelObj.put("llmModelName", "$modelPath/${modelObj.getString("llmModelName")}")
+
+            if (modelObj.has("projModelName") && !modelObj.isNull("projModelName")) {
+                modelObj.put(
+                    "projModelName",
+                    "$modelPath/${modelObj.getString("projModelName")}"
+                )
+                Log.i(VOICE_ASSISTANT_TAG,modelObj.getString("projModelName"))
+
             }
+            Log.d(VOICE_ASSISTANT_TAG,modelObj.getString("llmModelName"))
 
-            configJson.put("model", modelJsonEncoding)
-            return configJson
+
+            configJson.put("model", modelObj)
+            configJson
         } catch (e: Exception) {
             Log.e(VOICE_ASSISTANT_TAG, "LLM configuration invalid: Exception: $e")
-            return null
+            null
         }
     }
 

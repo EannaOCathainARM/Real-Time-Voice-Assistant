@@ -120,7 +120,7 @@ class UtilsTest {
         val stopWordsOnnx = stopWords.plus("<|end|>")
 
         assertEquals(false, defaultConfig.model.isVision)
-        assertEquals("<|im_start|>user\n%s<|im_end|>\n<|im_start|>assistant\n", defaultConfig.chat.userTemplate)
+        assertEquals("<|user|>%s<|end|><|assistant|>", defaultConfig.chat.userTemplate)
         assertEquals("<|end|>", defaultConfig.stopWords.last())
         assertEquals( "<|system|>%s<|end|>", defaultConfig.chat.systemTemplate)
         assertEquals("<|end|>", defaultConfig.stopWords.last())
@@ -194,8 +194,8 @@ class UtilsTest {
     @Test
     fun checkWrongDataTypePassedIn() {
         val configJson = setupConfigJson()
-        configJson.remove("runtime")
-
+        val runtimeJson = configJson.getJSONObject("runtime")
+        runtimeJson.remove("numThreads")
         val file = File.createTempFile("user-config", ".json").apply { deleteOnExit() }
         file.writeText(configJson.toString())
 

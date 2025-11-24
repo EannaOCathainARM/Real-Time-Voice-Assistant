@@ -26,8 +26,11 @@ import kotlinx.coroutines.Job
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.snapshots.SnapshotStateList
 import com.arm.voiceassistant.utils.ChatMessage
+import com.arm.voiceassistant.utils.Constants.VOICE_ASSISTANT_TAG
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
@@ -98,25 +101,34 @@ class MainViewModel(application: Application, isTest: Boolean = false) : ViewMod
     private val tmpFilePath: File =
         application.applicationContext.cacheDir
     private val contentResolver = application.contentResolver
-    var pipeline: Pipeline
+    lateinit var pipeline: Pipeline
     private var timer: Timer = Timer()
     private var delayMilliseconds = 21L
     private var useAsyncLLM = true
     private var llmResponseGenerationJob: Job? = null
     private var subscriber: ResponseSubscriber = ResponseSubscriber(this)
     var imageUploadEnabled: Boolean = false
+    private val _toastMessages = MutableSharedFlow<String>(extraBufferCapacity = 1)
+    val toastMessages: SharedFlow<String> = _toastMessages
+
 
     /**
      * Initialization block for the ViewModel.
      */
     init {
         reset()
-
-        val applicationInfo  = application.applicationInfo
-        val sharedLibraryPath = if (applicationInfo != null)  applicationInfo.nativeLibraryDir else ""
-        pipeline = Pipeline(filePath, isTest, sharedLibraryPath)
-        pipeline.setSubscriber(subscriber)
-        imageUploadEnabled = pipeline.supportsImageInput()
+        runCatching {
+            val applicationInfo = application.applicationInfo
+            val sharedLibraryPath =
+                if (applicationInfo != null) applicationInfo.nativeLibraryDir else ""
+            pipeline = Pipeline(filePath, isTest, sharedLibraryPath)
+            pipeline.setSubscriber(subscriber)
+            imageUploadEnabled = pipeline.supportsImageInput()
+        }
+        .onFailure{ e ->
+            Log.e(VOICE_ASSISTANT_TAG,"Failed to Initialize the pipeline :$e")
+            onError( "Failed to initialize the Voice assistant pipeline, Check configs and models")
+        }
     }
 
     /**
@@ -140,27 +152,37 @@ class MainViewModel(application: Application, isTest: Boolean = false) : ViewMod
      * Start recording and timer and update UI state to show recording state
      */
     fun onStartRecording() {
-        // Reset state from previous run
-        clearResponseText()
-        //clearPerformanceMetrics()
-        _uiState.update { currentState -> currentState.copy(playingAudio = false, recTimeMs = 0) }
-        timer.reset()
-
-        setContentState(ContentStates.Recording)
-
-        viewModelScope.launch {
-            pipeline.startRecording()
-        }
-        timer.start()
-
-        // Run timer in a coroutine
-        viewModelScope.launch {
-            while (timer.isRunning) {
-                _uiState.update { currentState ->
-                    currentState.copy(recTime = timer.format(), recTimeMs = timer.elapsedTime)
-                }
-                delay(delayMilliseconds)
+        runCatching {
+            // Reset state from previous run
+            clearResponseText()
+            //clearPerformanceMetrics()
+            _uiState.update { currentState ->
+                currentState.copy(
+                    playingAudio = false,
+                    recTimeMs = 0
+                )
             }
+            timer.reset()
+
+            setContentState(ContentStates.Recording)
+
+            viewModelScope.launch {
+                pipeline.startRecording()
+            }
+            timer.start()
+
+            // Run timer in a coroutine
+            viewModelScope.launch {
+                while (timer.isRunning) {
+                    _uiState.update { currentState ->
+                        currentState.copy(recTime = timer.format(), recTimeMs = timer.elapsedTime)
+                    }
+                    delay(delayMilliseconds)
+                }
+            }
+        }.onFailure { e ->
+            Log.e(VOICE_ASSISTANT_TAG, "Recording query failed, $e")
+            onError("Failed to create Audio record")
         }
     }
 
@@ -168,18 +190,23 @@ class MainViewModel(application: Application, isTest: Boolean = false) : ViewMod
      * Stop recording and timer
      */
     private fun stopRecording() {
-        if (_uiState.value.contentState != ContentStates.Recording) {
-            return
-        }
+        runCatching {
+            if (_uiState.value.contentState != ContentStates.Recording) {
+                return@runCatching
+            }
 
-        timer.stop()
+            timer.stop()
 
-        _uiState.update { currentState ->
-            currentState.copy(recTime = "00:00", recTimeMs = timer.elapsedTime)
-        }
+            _uiState.update { currentState ->
+                currentState.copy(recTime = "00:00", recTimeMs = timer.elapsedTime)
+            }
 
-        if (pipeline.recorderInitialized()) {
-            pipeline.stopRecording("$filePath/$FILE_NAME")
+            if (pipeline.recorderInitialized()) {
+                pipeline.stopRecording("$filePath/$FILE_NAME")
+            }
+        }.onFailure {e ->
+            Log.e(VOICE_ASSISTANT_TAG,"Failed to create response for Prompt" ,e)
+            onError("Failed to create query response, Try restarting")
         }
     }
 
@@ -208,24 +235,41 @@ class MainViewModel(application: Application, isTest: Boolean = false) : ViewMod
      * Called when button clicked to finish recording and start main pipeline
      */
     fun onStopRecording() {
-        pipeline.getTimers().toggleRealTimer(start = true, dump = false)
-        if (_uiState.value.recTimeMs < MIN_ALLOWED_RECORDING) {
-            // Reset timer so that, recTimeMs does not accumulate and render this condition useless
-            timer.reset()
-            setContentState(ContentStates.Idle)
-            if (pipeline.recorderInitialized()) {
-                pipeline.cancelRecording()
+        runCatching {
+            pipeline.getTimers().toggleRealTimer(start = true, dump = false)
+            if (_uiState.value.recTimeMs < MIN_ALLOWED_RECORDING) {
+                // Reset timer so that, recTimeMs does not accumulate and render this condition useless
+                timer.reset()
+                setContentState(ContentStates.Idle)
+                if (pipeline.recorderInitialized()) {
+                    pipeline.cancelRecording()
+                }
+                onError("Short recording. Please try again.")
+                return@runCatching
             }
-            onError("Short recording. Please try again.")
-            return
-        }
 
-        viewModelScope.launch {
-            stopRecording()
-            invokePipeline()
+            viewModelScope.launch {
+                stopRecording()
+                invokePipeline()
+            }
+        }.onFailure { e ->
+            Log.e(VOICE_ASSISTANT_TAG, "Failed to create Audio record and generate response", e)
+            if (e.message?.contains("context is full") == true) {
+                onError("Query Encoding failed due to llm context overflow. Try resetting the context")
+            }
+            else {
+                onError("Failed to create Audio record and generate response, Try restarting the voice-assistant")
+            }
         }
     }
 
+    /**
+     * Method to show warning toasts
+     * @param message : Warning message to show in toast
+     */
+    fun showToast(message: String) {
+        _toastMessages.tryEmit(message)
+    }
     /**
      * Update the current content state
      * @param contentState current state to set
@@ -431,7 +475,16 @@ class MainViewModel(application: Application, isTest: Boolean = false) : ViewMod
      * @param transcription The user's transcribed input to be processed by the LLM.
      */
     private suspend fun generateResponseTokens(transcription: String) {
-        pipeline.generateResponseTokens(transcription)
+        runCatching {
+            pipeline.generateResponseTokens(transcription)
+        }.onFailure { e ->
+            if ((pipeline.getChatProgress() > 85) ||  (e.message?.contains("context is full") == true)) {
+                onError("Query Encoding failed due to llm context overflow. Try resetting the context")
+            }
+            else {
+                onError("Query Response phase failed . Try restarting the app")
+            }
+        }
     }
 
     /**
@@ -465,21 +518,32 @@ class MainViewModel(application: Application, isTest: Boolean = false) : ViewMod
      * Callback to handle the response generation for LLM
      * @param tokens The latest chunk of response tokens received from the LLM.
      */
-     suspend fun generatedResponseCallback(tokens: String?) {
-        if (tokens != null) {
-            if (responseComplete(tokens)) {
-                pipeline.finalizeSpeechSynthesis()
-                updateToIdleState()
-                updateLLMTokensPerSec(pipeline.getEncodeTokensPerSec(), pipeline.getDecodeTokensPerSec())
-            } else if (uiState.value.isTTSEnabled) {
-                if (!pipeline.speechSynthesisInProgress()) {
-                    pipeline.getTimers().toggleFirstResponseTimer(start = false, dump = true)
-                    pipeline.startSpeechSynthesis()
+     suspend fun generatedResponseCallback(tokens: String?)
+    {
+         runCatching {
+            if (tokens != null) {
+                if (responseComplete(tokens)) {
+                    pipeline.finalizeSpeechSynthesis()
+                    updateToIdleState()
+                    updateLLMTokensPerSec(pipeline.getEncodeTokensPerSec(), pipeline.getDecodeTokensPerSec())
+                    if (pipeline.getChatProgress() > 80)
+                    {
+                        Log.w(VOICE_ASSISTANT_TAG,"context is ${pipeline.getChatProgress()}% full")
+                        showToast( "LLM context consumed %${pipeline.getChatProgress()} , consider resetting context")
+                    }
+                } else if (uiState.value.isTTSEnabled) {
+                    if (!pipeline.speechSynthesisInProgress()) {
+                        pipeline.getTimers().toggleFirstResponseTimer(start = false, dump = true)
+                        pipeline.startSpeechSynthesis()
+                    }
+                    pipeline.addWordsToSpeechSynthesis(tokens)
                 }
-                pipeline.addWordsToSpeechSynthesis(tokens)
             }
+        }.onFailure { e ->
+            Log.e(VOICE_ASSISTANT_TAG,"Failed to generate response $e")
+            onError(" Response generation failed , Try restarting .")
         }
-    }
+   }
 
     /**
      * Used by the pipeline to change to idle state after speech audio completes
@@ -539,18 +603,23 @@ class MainViewModel(application: Application, isTest: Boolean = false) : ViewMod
      * @param uri The [Uri] of the image selected by the user.
      */
     fun addImage(uri: Uri) {
-        Log.d("tag", "User selected image URI = $uri")
-        val inputStream = contentResolver.openInputStream(uri)
-        val filename = "image_${System.currentTimeMillis()}.jpg"
-        val originalResFile = File(filePath, filename)
-        val outputStream = FileOutputStream(originalResFile)
-        inputStream?.copyTo(outputStream)
-        pipeline.addImageToLLmDialog(originalResFile, tmpFilePath.absolutePath)
-        _uiState.update { currentState ->
-            currentState.copy(imagePath = originalResFile.absolutePath)
+        runCatching {
+            Log.d("tag", "User selected image URI = $uri")
+            val inputStream = contentResolver.openInputStream(uri)
+            val filename = "image_${System.currentTimeMillis()}.jpg"
+            val originalResFile = File(filePath, filename)
+            val outputStream = FileOutputStream(originalResFile)
+            inputStream?.copyTo(outputStream)
+            pipeline.addImageToLLmDialog(originalResFile, tmpFilePath.absolutePath)
+            _uiState.update { currentState ->
+                currentState.copy(imagePath = originalResFile.absolutePath)
+            }
+            val imageUri = Uri.fromFile(originalResFile)
+            messages.add(ChatMessage.UserImage(imageUri))
+        }.onFailure { e ->
+            Log.e(VOICE_ASSISTANT_TAG, "Failed to add Image: $e")
+            onError(" Querying Image failed , Try restarting .")
         }
-        val imageUri = Uri.fromFile(originalResFile)
-        messages.add(ChatMessage.UserImage(imageUri))
     }
 
     /**
