@@ -72,9 +72,10 @@ class Pipeline(modelPath: String, isTest: Boolean = false, private val sharedLib
 
     // User config file for llm, default is llama.cpp
     private var configFileName: String = when (llmFramework) {
-        "llama.cpp" -> "llamaVisionConfigUser.json"
+        "llama.cpp"         -> "llamaVisionConfigUser.json"
         "onnxruntime-genai" -> "onnxTextConfigUser.json"
-        "mnn" -> "mnnVisionConfigUser.json"
+        "mnn"               -> "mnnVisionConfigUser.json"
+        "mediapipe"         -> "mediapipeTextConfigUser.json"
         else -> "llamaVisionConfigUser.json"
     }
     // User config file name stt

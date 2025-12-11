@@ -100,7 +100,6 @@ object Utils {
                 systemTemplate = "<|system|>%s<|end|>"
                 userTemplate =  "<|user|>%s<|end|><|assistant|>"
                 batchSize = 1
-
             }
             "mnn" -> {
                 llmModelName = "mnn/qwen25vl-3b/"
@@ -108,7 +107,14 @@ object Utils {
                 systemTemplate = "<|im_start|>system\n%s<|im_end|>"
                 userTemplate = "<|im_start|>user\n%s<|im_end|>\n<|im_start|>assistant\n"
                 batchSize = 1
-
+            }
+            "mediapipe" -> {
+                llmModelName = "mediapipe/gemma-2b/gemma-2b-it-cpu-int4.tflite"
+                isVision = false
+                systemTemplate = "<start_of_turn>system:%s<end_of_turn>"
+                userTemplate = "\n<start_of_turn>user:%s<end_of_turn>\n<start_of_turn>model:"
+                batchSize = 1
+                applyDefaultChatTemplate = true
             }
         }
             modelPointer = "$modelPath/$llmModelName"

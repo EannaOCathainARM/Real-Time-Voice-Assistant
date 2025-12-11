@@ -30,6 +30,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.snapshots.SnapshotStateList
+import com.arm.voiceassistant.BuildConfig
 import com.arm.voiceassistant.utils.ChatMessage
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableSharedFlow
@@ -116,7 +117,7 @@ class MainViewModel(application: Application, isTest: Boolean = false) : ViewMod
     private var llmResponseGenerationJob: Job? = null
     private var subscriber: ResponseSubscriber = ResponseSubscriber(this)
     var imageUploadEnabled: Boolean = false
-    private val _toastMessages = MutableSharedFlow<String>(extraBufferCapacity = 1)
+    private val _toastMessages = MutableSharedFlow<String>(replay=1,extraBufferCapacity = 1)
     val toastMessages: SharedFlow<String> = _toastMessages
 
 
