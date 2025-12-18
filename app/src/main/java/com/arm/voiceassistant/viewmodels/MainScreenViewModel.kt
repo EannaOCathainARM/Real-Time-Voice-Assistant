@@ -522,7 +522,7 @@ class MainViewModel(application: Application, isTest: Boolean = false) : ViewMod
             do {
                 var message = ""
                 var token = ""
-                Log.i(VOICE_ASSISTANT_TAG, "Waiting on get token")
+                Log.d(VOICE_ASSISTANT_TAG, "Waiting on get token")
                 val result = llmBridge.getNextToken()
                 when (result) {
                     is NativeResult.Success -> token = result.data ?: ""
@@ -542,7 +542,7 @@ class MainViewModel(application: Application, isTest: Boolean = false) : ViewMod
                 }
 
                 if( llm.isStopToken(token)) {
-                    Log.i(VOICE_ASSISTANT_TAG, "EOS token retrieved")
+                    Log.d(VOICE_ASSISTANT_TAG, "EOS token retrieved")
                     complete = true
                 }
 

@@ -23,8 +23,10 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.tooling.preview.Preview
@@ -47,11 +49,22 @@ fun ModelMetrics(
     model2metric: String = INITIAL_METRICS_VALUE,
     model3metric: String = INITIAL_METRICS_VALUE
 ) {
+    val context = LocalContext.current
+
     val metricMap = mapOf(
         "Speech recognition time" to model1metric,
         "LLM encode tokens/s" to model2metric,
         "LLM decode tokens/s" to model3metric
     )
+
+    val textStyle = TextStyle(
+        fontWeight = FontWeight.Black,
+        fontSize = 14.sp,
+        color = MaterialTheme.colorScheme.onSecondary
+    )
+
+    val rowModifier = Modifier
+        .fillMaxWidth(0.9f)
 
     Column(
         modifier = modifier
@@ -60,25 +73,26 @@ fun ModelMetrics(
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
         metricMap.forEach { (title, value) ->
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth(0.9f)
-                    .semantics { contentDescription = title }
-            ) {
-                Text(
-                    text = "$title:",
-                    fontWeight = FontWeight.Black,
-                    fontSize = 14.sp,
-                    color = MaterialTheme.colorScheme.onSecondary
-                )
+            Row(modifier = rowModifier.semantics { contentDescription = title }) {
+                Text(text = "$title:",style = textStyle)
                 Spacer(modifier.weight(1f))
-                Text(
-                    text = value,
-                    fontWeight = FontWeight.Black,
-                    fontSize = 14.sp,
-                    color = MaterialTheme.colorScheme.onSecondary
-                )
+                Text(text = value, style = textStyle)
             }
+        }
+        Row(modifier = rowModifier) {
+            Text(text = "RTVA memory usage:",style = textStyle)
+            Spacer(modifier.weight(1f))
+            MemoryUsageText(textStyle)
+        }
+        Row(modifier = rowModifier) {
+            Text(text = "Available system memory:",style = textStyle)
+            Spacer(modifier.weight(1f))
+            MemoryAvailableText(textStyle)
+        }
+        Row(modifier = rowModifier) {
+            Text(text = "Thermal Status:",style = textStyle)
+            Spacer(modifier.weight(1f))
+            ThermalStatusText(textStyle)
         }
     }
 }
