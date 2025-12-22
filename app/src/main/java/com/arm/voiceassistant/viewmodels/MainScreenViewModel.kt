@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: Copyright 2024-2025 Arm Limited and/or its affiliates <open-source-office@arm.com>
+ * SPDX-FileCopyrightText: Copyright 2024-2026 Arm Limited and/or its affiliates <open-source-office@arm.com>
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -10,28 +10,29 @@ import android.app.Application
 import android.net.Uri
 import android.os.Environment
 import android.util.Log
+import androidx.compose.runtime.mutableStateListOf
+import androidx.compose.runtime.snapshots.SnapshotStateList
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.arm.Llm
+import com.arm.voiceassistant.BuildConfig
 import com.arm.voiceassistant.Pipeline
-import com.arm.voiceassistant.subscribers.ResponseSubscriber
+import com.arm.voiceassistant.utils.ChatMessage
+import com.arm.voiceassistant.utils.ChatMetricsUpdater
 import com.arm.voiceassistant.utils.Constants.ContentStates
+import com.arm.voiceassistant.utils.Constants.EOS
 import com.arm.voiceassistant.utils.Constants.INITIAL_METRICS_VALUE
 import com.arm.voiceassistant.utils.Constants.MIN_ALLOWED_RECORDING
 import com.arm.voiceassistant.utils.Constants.VOICE_ASSISTANT_TAG
-import com.arm.voiceassistant.utils.Constants.EOS
 import com.arm.voiceassistant.utils.LlmBridge
 import com.arm.voiceassistant.utils.NativeResult
 import com.arm.voiceassistant.utils.Timer
+import com.arm.voiceassistant.utils.TimingStats
 import com.arm.voiceassistant.utils.Utils
 import com.arm.voiceassistant.utils.Utils.responseComplete
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
-import androidx.compose.runtime.mutableStateListOf
-import androidx.compose.runtime.snapshots.SnapshotStateList
-import com.arm.voiceassistant.BuildConfig
-import com.arm.voiceassistant.utils.ChatMessage
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -40,6 +41,10 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
+import kotlinx.coroutines.withContext
 import java.io.File
 import java.io.FileOutputStream
 
@@ -71,7 +76,7 @@ data class MainUiState(
     val llmEncodeTPS: String = INITIAL_METRICS_VALUE,
     val llmDecodeTPS: String = INITIAL_METRICS_VALUE,
     val isTTSEnabled: Boolean = false,
-    val TTSWarningMessage: String? = null
+    val ttsWarningMessage: String? = null
 )
 
 /**
@@ -101,46 +106,240 @@ class MainViewModel(application: Application, isTest: Boolean = false) : ViewMod
     private val _uiState = MutableStateFlow(MainUiState())
     var uiState: StateFlow<MainUiState> = _uiState.asStateFlow()
     val messages: SnapshotStateList<ChatMessage> = mutableStateListOf()
+
     private val filePath: String =
         application.applicationContext.getExternalFilesDir(Environment.DIRECTORY_DOWNLOADS)!!.absolutePath
-    private val tmpFilePath: File =
-        application.applicationContext.cacheDir
+    private val tmpFilePath: File = application.applicationContext.cacheDir
     private val contentResolver = application.contentResolver
-    lateinit var pipeline: Pipeline
+    private val sharedLibraryPath: String = application.applicationInfo?.nativeLibraryDir ?: ""
 
-  
+    lateinit var pipeline: Pipeline
     lateinit var llm: Llm
     lateinit var llmBridge: LlmBridge
+
     private var timer: Timer = Timer()
     private var delayMilliseconds = 21L
     private var useAsyncLLM = true
     private var llmResponseGenerationJob: Job? = null
-    private var subscriber: ResponseSubscriber = ResponseSubscriber(this)
     var imageUploadEnabled: Boolean = false
-    private val _toastMessages = MutableSharedFlow<String>(replay=1,extraBufferCapacity = 1)
-    val toastMessages: SharedFlow<String> = _toastMessages
 
+    private val _toastMessages = MutableSharedFlow<String>(replay = 1, extraBufferCapacity = 1)
+    val toastMessages: SharedFlow<String> = _toastMessages
+    private val metricsUpdater = ChatMetricsUpdater(_uiState, messages)
+
+    private var llmFramework = BuildConfig.LLM_FRAMEWORK
+    private var encodeUpdatedForThisTurn = false
+
+    private val benchmarkMutex = Mutex()
+    private val pipelineMutex = Mutex()
+    private val isTestMode = isTest
+
+    /**
+     * Runs an LLM benchmark and returns its result summary as a single atomic operation.
+     *
+     * @param modelKey Logical model name selected in the UI.
+     * @param inputTokens Number of input tokens for the synthetic prompt.
+     * @param outputTokens Number of tokens to generate during decode.
+     * @param threads Number of runtime threads to use.
+     * @param iterations Number of measured benchmark iterations.
+     * @param warmup Number of warm-up iterations (excluded from stats).
+     *
+     * @return A human-readable benchmark summary string. If the benchmark fails,
+     * the returned string includes the failure code and any available output.
+     */
+    suspend fun runBenchmarkAndGetSummary(
+        modelKey: String,
+        inputTokens: Int,
+        outputTokens: Int,
+        threads: Int,
+        iterations: Int,
+        warmup: Int
+    ): String = benchmarkMutex.withLock {
+        withContext(Dispatchers.IO) {
+            val code = runBenchmark(modelKey, inputTokens, outputTokens, threads, iterations, warmup)
+            val results = getBenchmarkResults()
+            if (code == 0) results else "Benchmark failed (code=$code)\n$results"
+        }
+    }
+
+    /**
+     * Initializes the [Pipeline] and related LLM helpers.
+     *
+     * NOTE: Callers should hold [pipelineMutex] to prevent concurrent init/shutdown races.
+     */
+    private suspend fun initPipelineLocked(isTest: Boolean) {
+        runCatching {
+            pipeline = Pipeline(filePath, isTest, sharedLibraryPath)
+            llm = pipeline.llm
+            llmBridge = LlmBridge(llm)
+            imageUploadEnabled = pipeline.supportsImageInput()
+        }.onFailure { e ->
+            Log.e(VOICE_ASSISTANT_TAG, "Failed to Initialize the pipeline :$e", e)
+            onError("Failed to initialize the Voice assistant pipeline, Check configs and models")
+        }
+    }
+
+    /**
+     * Synchronized entry for pipeline init using a coroutine-friendly mutex.
+     */
+    private suspend fun initPipeline(isTest: Boolean) = pipelineMutex.withLock {
+        initPipelineLocked(isTest)
+    }
+
+    /**
+     * Shuts down the current pipeline and clears chat/UI state.
+     *
+     * NOTE: Callers should hold [pipelineMutex] to prevent concurrent init/shutdown races.
+     */
+    private fun shutdownPipelineLocked() {
+        // Cancel token stream, if available
+        if (this::llmBridge.isInitialized) {
+            runCatching { llmBridge.cancel() }
+        }
+
+        cancelLLMResponseGenerationJob()
+
+        // Stop any ongoing audio/speech
+        runCatching {
+            if (this::pipeline.isInitialized) {
+                if (pipeline.recorderInitialized()) pipeline.cancelRecording()
+                pipeline.cancelSpeechSynthesis()
+            }
+        }
+
+        // Free native resources
+        runCatching {
+            if (this::pipeline.isInitialized) {
+                pipeline.close()
+            }
+        }
+
+        // Clear previous chat UI state
+        messages.clear()
+
+        reset()
+    }
 
     /**
      * Initialization block for the ViewModel.
      */
     init {
         reset()
-        runCatching {
-            val applicationInfo = application.applicationInfo
-            val sharedLibraryPath =
-                if (applicationInfo != null) applicationInfo.nativeLibraryDir else ""
-            pipeline = Pipeline(filePath, isTest, sharedLibraryPath)
-
-            llm = pipeline.llm
-            llmBridge = LlmBridge(llm)
-
-            imageUploadEnabled = pipeline.supportsImageInput()
+        // Keep initial pipeline creation synchronous for predictable startup behavior.
+        runBlocking {
+            initPipeline(isTest)
         }
-        .onFailure{ e ->
-            Log.e(VOICE_ASSISTANT_TAG,"Failed to Initialize the pipeline :$e")
-            onError( "Failed to initialize the Voice assistant pipeline, Check configs and models")
+    }
+
+    /**
+     * Shuts down the current pipeline and clears chat/UI state.
+     *
+     * Cancels in-flight LLM work, stops recording/synthesis if needed,
+     * frees native resources via [Pipeline.close], clears messages, and resets state.
+     */
+    suspend fun shutdownPipeline() = pipelineMutex.withLock {
+        shutdownPipelineLocked()
+    }
+
+    /**
+     * Recreates the pipeline for a fresh chat session.
+     *
+     * Performs a full shutdown and re-initialization, then returns to [ContentStates.Idle].
+     */
+    suspend fun reinitializePipelineForChat(isTest: Boolean = isTestMode) = pipelineMutex.withLock {
+        shutdownPipelineLocked()
+        initPipelineLocked(isTest)
+        setContentState(ContentStates.Idle)
+    }
+
+    /**
+     * Find a GGUF model file for llama.cpp using the given model key.
+     *
+     * Looks under:
+     *   <filePath>/llama.cpp/<modelKey>/
+     *
+     * The directory is scanned for `.gguf` files (projector models are ignored).
+     * The first file in sorted order is selected.
+     *
+     * @param modelKey Model name from the UI.
+     * @return Absolute path to the selected `.gguf` file, or null if none is found.
+     */
+    private fun resolveLlamaModelPath(modelKey: String): String? {
+        val llamaRoot = File(filePath, "llama.cpp")
+        val modelDir = File(llamaRoot, modelKey)
+
+        if (!modelDir.exists() || !modelDir.isDirectory) {
+            val msg = "Model folder not found for \"$modelKey\""
+            Log.e(VOICE_ASSISTANT_TAG, msg + ": ${modelDir.absolutePath}")
+            showToast(msg)
+            return null
         }
+
+        val ggufFiles = modelDir.listFiles { f ->
+            f.isFile &&
+                    f.extension.equals("gguf", ignoreCase = true) &&
+                    !f.name.contains("proj", ignoreCase = true)
+        }?.sortedBy { it.name } ?: emptyList()
+
+        if (ggufFiles.isEmpty()) {
+            val msg = "No compatible .gguf model found for \"$modelKey\""
+            Log.e(VOICE_ASSISTANT_TAG, msg + " in ${modelDir.absolutePath}")
+            showToast(msg)
+            return null
+        }
+
+        val chosen = ggufFiles.first()
+        Log.i(VOICE_ASSISTANT_TAG, "Using GGUF model: ${chosen.absolutePath}")
+        return chosen.absolutePath
+    }
+
+
+    /**
+     * Run the native LLM benchmark with the selected configuration.
+     *
+     * @param modelKey Logical model name from UI (e.g. "llama-3.2", "phi-2").
+     * @param inputTokens Number of input tokens for the synthetic prompt.
+     * @param outputTokens Number of tokens to generate during decode.
+     * @param threads Number of threads to use in the backend runtime.
+     * @param iterations Number of measured iterations.
+     * @param warmup Number of warm-up iterations (ignored in stats).
+     * @return 0 on success, non-zero on failure.
+     */
+    fun runBenchmark(
+        modelKey: String,
+        inputTokens: Int,
+        outputTokens: Int,
+        threads: Int,
+        iterations: Int,
+        warmup: Int = 1
+    ): Int {
+        val modelPath: String? = if (llmFramework == "llama.cpp") {
+            resolveLlamaModelPath(modelKey)
+        } else {
+            "$filePath/$llmFramework/$modelKey/"
+        }
+
+        if (modelPath == null) {
+            onError("Could not find a model for \"$modelKey\"")
+            return -1
+        }
+
+        return llm.runBenchmark(
+            modelPath,
+            inputTokens,
+            outputTokens,
+            threads,
+            iterations,
+            warmup,
+            sharedLibraryPath
+        )
+    }
+
+    /**
+     * Get the last benchmark results string from the native benchmark.
+     */
+    fun getBenchmarkResults(): String {
+        return llm.getBenchmarkResults()
     }
 
     /**
@@ -174,28 +373,28 @@ class MainViewModel(application: Application, isTest: Boolean = false) : ViewMod
                     recTimeMs = 0
                 )
             }
-        timer.reset()
+            timer.reset()
 
-        setContentState(ContentStates.Recording)
+            setContentState(ContentStates.Recording)
 
-        viewModelScope.launch {
-            pipeline.startRecording()
-        }
-        timer.start()
-
-        // Run timer in a coroutine
-        viewModelScope.launch {
-            while (timer.isRunning) {
-                _uiState.update { currentState ->
-                    currentState.copy(recTime = timer.format(), recTimeMs = timer.elapsedTime)
-                }
-                delay(delayMilliseconds)
+            viewModelScope.launch {
+                pipeline.startRecording()
             }
-        }
+            timer.start()
+
+            // Run timer in a coroutine
+            viewModelScope.launch {
+                while (timer.isRunning) {
+                    _uiState.update { currentState ->
+                        currentState.copy(recTime = timer.format(), recTimeMs = timer.elapsedTime)
+                    }
+                    delay(delayMilliseconds)
+                }
+            }
         }.onFailure { e ->
             Log.e(VOICE_ASSISTANT_TAG, "Recording query failed, $e")
             onError("Failed to create Audio record")
-    }
+        }
     }
 
     /**
@@ -203,25 +402,24 @@ class MainViewModel(application: Application, isTest: Boolean = false) : ViewMod
      */
     private fun stopRecording() {
         runCatching {
-        if (_uiState.value.contentState != ContentStates.Recording) {
+            if (_uiState.value.contentState != ContentStates.Recording) {
                 return@runCatching
-        }
+            }
 
-        timer.stop()
+            timer.stop()
 
-        _uiState.update { currentState ->
-            currentState.copy(recTime = "00:00", recTimeMs = timer.elapsedTime)
-        }
+            _uiState.update { currentState ->
+                currentState.copy(recTime = "00:00", recTimeMs = timer.elapsedTime)
+            }
 
-        if (pipeline.recorderInitialized()) {
-            pipeline.stopRecording("$filePath/$FILE_NAME")
-        }
-        }.onFailure {e ->
-            Log.e(VOICE_ASSISTANT_TAG,"Failed to create response for Prompt" ,e)
+            if (pipeline.recorderInitialized()) {
+                pipeline.stopRecording("$filePath/$FILE_NAME")
+            }
+        }.onFailure { e ->
+            Log.e(VOICE_ASSISTANT_TAG, "Failed to create response for Prompt", e)
             onError("Failed to create query response, Try restarting")
         }
     }
-
 
     /**
      * Cancel current recording in process
@@ -242,34 +440,32 @@ class MainViewModel(application: Application, isTest: Boolean = false) : ViewMod
         pipeline.getTimers().toggleRealTimer(start = false, dump = true)
     }
 
-
     /**
      * Called when button clicked to finish recording and start main pipeline
      */
     fun onStopRecording() {
         runCatching {
-        pipeline.getTimers().toggleRealTimer(start = true, dump = false)
-        if (_uiState.value.recTimeMs < MIN_ALLOWED_RECORDING) {
-            // Reset timer so that, recTimeMs does not accumulate and render this condition useless
-            timer.reset()
-            setContentState(ContentStates.Idle)
-            if (pipeline.recorderInitialized()) {
-                pipeline.cancelRecording()
-            }
-            onError("Short recording. Please try again.")
+            pipeline.getTimers().toggleRealTimer(start = true, dump = false)
+            if (_uiState.value.recTimeMs < MIN_ALLOWED_RECORDING) {
+                // Reset timer so that, recTimeMs does not accumulate and render this condition useless
+                timer.reset()
+                setContentState(ContentStates.Idle)
+                if (pipeline.recorderInitialized()) {
+                    pipeline.cancelRecording()
+                }
+                onError("Short recording. Please try again.")
                 return@runCatching
-        }
+            }
 
-        viewModelScope.launch {
-            stopRecording()
-            invokePipeline()
-        }
+            viewModelScope.launch {
+                stopRecording()
+                invokePipeline()
+            }
         }.onFailure { e ->
             Log.e(VOICE_ASSISTANT_TAG, "Failed to create Audio record and generate response", e)
             if (e.message?.contains("context is full") == true) {
                 onError("Query Encoding failed due to llm context overflow. Try resetting the context")
-    }
-            else {
+            } else {
                 onError("Failed to create Audio record and generate response, Try restarting the voice-assistant")
             }
         }
@@ -282,6 +478,7 @@ class MainViewModel(application: Application, isTest: Boolean = false) : ViewMod
     fun showToast(message: String) {
         _toastMessages.tryEmit(message)
     }
+
     /**
      * Update the current content state
      * @param contentState current state to set
@@ -300,7 +497,14 @@ class MainViewModel(application: Application, isTest: Boolean = false) : ViewMod
         _uiState.update { currentState ->
             currentState.copy(userText = text)
         }
-        messages.add(ChatMessage.UserText(text))
+
+        val timing = TimingStats(
+            sttTime = uiState.value.sttTime,
+            llmEncodeTps = "-",
+            llmDecodeTps = "-"
+        )
+
+        messages.add(ChatMessage.UserText(text, timing = timing))
     }
 
     /**
@@ -328,20 +532,12 @@ class MainViewModel(application: Application, isTest: Boolean = false) : ViewMod
     }
 
     /**
-     * Reset voice assistant text box values
+     * Clears only the assistant response text from UI state.
      */
-    private fun clearResponseText()
-    {
+    private fun clearResponseText() {
         _uiState.update { currentState ->
-            currentState.copy( responseText = "")
+            currentState.copy(responseText = "")
         }
-    }
-    /**
-     * Function to request the cancellation of a ongoing operation / functional call
-     * @param operationId associated with operation / functional call
-     */
-    fun CancelAsync() {
-        llmBridge.cancel()
     }
 
     /**
@@ -356,8 +552,6 @@ class MainViewModel(application: Application, isTest: Boolean = false) : ViewMod
         cancelLLMResponseGenerationJob()
         if (!useAsyncLLM) {
             pipeline.cancelSpeechSynthesis()
-        }
-        else {
         }
         reset()
     }
@@ -379,13 +573,12 @@ class MainViewModel(application: Application, isTest: Boolean = false) : ViewMod
         updateSpeechRecTime()
         pipeline.getTimers().toggleFirstResponseTimer(start = true, dump = false)
         setUserText(transcription)
-        if(useAsyncLLM) {
-            Log.i (VOICE_ASSISTANT_TAG, "Invoking LLM async")
+        if (useAsyncLLM) {
+            Log.i(VOICE_ASSISTANT_TAG, "Invoking LLM async")
             invokeLLMAndSSAsync()
-
             getLlmResponse()
-        } else{
-            Log.i (VOICE_ASSISTANT_TAG, "Invoking LLM sync")
+        } else {
+            Log.i(VOICE_ASSISTANT_TAG, "Invoking LLM sync")
             invokeLLMAndSS()
         }
     }
@@ -451,7 +644,6 @@ class MainViewModel(application: Application, isTest: Boolean = false) : ViewMod
         if (pipeline.llmInitialized()) {
             setContentState(ContentStates.Responding)
             pipeline.generateResponse(_uiState.value.userText)
-            updateLLMTokensPerSec(pipeline.getEncodeTokensPerSec(), pipeline.getDecodeTokensPerSec())
         }
 
         // Synchronous so responses is an empty array
@@ -490,6 +682,7 @@ class MainViewModel(application: Application, isTest: Boolean = false) : ViewMod
             llmResponseGenerationJob = null
         }
     }
+
     /**
      * Generate response (async)
      * @param transcription The user's transcribed input to be processed by the LLM.
@@ -506,9 +699,14 @@ class MainViewModel(application: Application, isTest: Boolean = false) : ViewMod
         }
     }
 
+    /**
+     * Reads streamed tokens from the native bridge and updates UI/chat messages.
+     *
+     * Updates encode TPS once per turn, appends tokens to the response, and finalizes
+     * when EOS/cancel/completion is detected.
+     */
     private suspend fun getLlmResponse() {
-
-         if (!pipeline.llmInitialized()) {
+        if (!pipeline.llmInitialized()) {
             Log.e(VOICE_ASSISTANT_TAG, "Failed to init LLM module")
             return
         }
@@ -516,7 +714,6 @@ class MainViewModel(application: Application, isTest: Boolean = false) : ViewMod
         llmBridge.clearCancel()
 
         CoroutineScope(Dispatchers.IO).launch {
-
             var count = 0
             var complete = false
             do {
@@ -532,7 +729,7 @@ class MainViewModel(application: Application, isTest: Boolean = false) : ViewMod
                 }
 
                 if (result !is NativeResult.Success) {
-                   Log.e(VOICE_ASSISTANT_TAG, message)
+                    Log.e(VOICE_ASSISTANT_TAG, message)
                     complete = true
                 }
 
@@ -541,7 +738,18 @@ class MainViewModel(application: Application, isTest: Boolean = false) : ViewMod
                     continue
                 }
 
-                if( llm.isStopToken(token)) {
+                if (!encodeUpdatedForThisTurn) {
+                    encodeUpdatedForThisTurn = true
+
+                    val encodeTps = "%.2f".format(pipeline.getEncodeTokensPerSec())
+
+                    launch(Dispatchers.Main) {
+                        // Update uiState encode TPS
+                        metricsUpdater.onEncodeAvailableOncePerTurn(encodeTps)
+                    }
+                }
+
+                if (llm.isStopToken(token)) {
                     Log.d(VOICE_ASSISTANT_TAG, "EOS token retrieved")
                     complete = true
                 }
@@ -560,32 +768,20 @@ class MainViewModel(application: Application, isTest: Boolean = false) : ViewMod
                     }
                     generatedResponseCallback(token)
                 }
-            } while (count++ < 100 && complete == false )
+            } while (count++ < 100 && complete == false)
         }
-
     }
-
 
     /**
      * Asynchronous handling of the LLM + SS part of the pipeline
      */
     private suspend fun invokeLLMAndSSAsync() {
         if (pipeline.llmInitialized()) {
-            // Generate a response
             setContentState(ContentStates.Responding)
             messages.add(ChatMessage.AssistantText(""))
-            generateResponseTokens(uiState.value.userText)
-        }
-    }
 
-    /**
-     * Updates the UI state with the latest LLM performance metrics.
-     * @param encode The LLM's encode speed in tokens per second.
-     * @param decode The LLM's decode speed in tokens per second.
-     */
-    private fun updateLLMTokensPerSec(encode : Float, decode : Float) {
-        _uiState.update { currentState ->
-            currentState.copy(llmEncodeTPS = "%.2f".format(encode), llmDecodeTPS = "%.2f".format(decode))
+            encodeUpdatedForThisTurn = false
+            generateResponseTokens(uiState.value.userText)
         }
     }
 
@@ -593,32 +789,39 @@ class MainViewModel(application: Application, isTest: Boolean = false) : ViewMod
      * Callback to handle the response generation for LLM
      * @param tokens The latest chunk of response tokens received from the LLM.
      */
-     suspend fun generatedResponseCallback(tokens: String?)
-    {
-         runCatching {
-        if (tokens != null) {
+    suspend fun generatedResponseCallback(tokens: String?) {
+        runCatching {
+            if (tokens == null) return@runCatching
+
             if (responseComplete(tokens)) {
+                // Snapshot latest perf numbers
+                val encodeTps = "%.2f".format(pipeline.getEncodeTokensPerSec())
+                val decodeTps = "%.2f".format(pipeline.getDecodeTokensPerSec())
+
+                // Update UI metrics + message timing footers via helper
+                metricsUpdater.onEncodeAvailableOncePerTurn(encodeTps)
+                metricsUpdater.onDecodeAvailableAtEnd(decodeTps)
+
                 pipeline.finalizeSpeechSynthesis()
                 updateToIdleState()
-                updateLLMTokensPerSec(pipeline.getEncodeTokensPerSec(), pipeline.getDecodeTokensPerSec())
-                    if (pipeline.getChatProgress() > 80)
-                    {
-                        Log.w(VOICE_ASSISTANT_TAG,"context is ${pipeline.getChatProgress()}% full")
-                        showToast( "LLM context consumed %${pipeline.getChatProgress()} , consider resetting context")
-                    }
-                } else if (uiState.value.isTTSEnabled) {
-                    if (!pipeline.speechSynthesisInProgress()) {
+
+                if (pipeline.getChatProgress() > 80) {
+                    Log.w(VOICE_ASSISTANT_TAG, "context is ${pipeline.getChatProgress()}% full")
+                    showToast("LLM context consumed %${pipeline.getChatProgress()} , consider resetting context")
+                }
+            } else if (uiState.value.isTTSEnabled) {
+                if (!pipeline.speechSynthesisInProgress()) {
                     pipeline.getTimers().toggleFirstResponseTimer(start = false, dump = true)
                     pipeline.startSpeechSynthesis()
                 }
                 pipeline.addWordsToSpeechSynthesis(tokens)
             }
-        }
         }.onFailure { e ->
-            Log.e(VOICE_ASSISTANT_TAG,"Failed to generate response $e")
-            onError(" Response generation failed , Try restarting .")
+            Log.e(VOICE_ASSISTANT_TAG, "Failed to generate response $e", e)
+            onError("Response generation failed, try restarting.")
+        }
     }
-   }
+
 
     /**
      * Used by the pipeline to change to idle state after speech audio completes
@@ -656,8 +859,9 @@ class MainViewModel(application: Application, isTest: Boolean = false) : ViewMod
         val lastIndex = messages.indexOfLast { it is ChatMessage.AssistantText }
         if (lastIndex != -1) {
             val currentText = uiState.value.responseText
-            messages[lastIndex] = ChatMessage.AssistantText(currentText)
-    }
+            val existing = messages[lastIndex] as ChatMessage.AssistantText
+            messages[lastIndex] = existing.copy(text = currentText)
+        }
     }
 
     /**
@@ -712,14 +916,14 @@ class MainViewModel(application: Application, isTest: Boolean = false) : ViewMod
         val isTurningOn = !_uiState.value.isTTSEnabled
         if (isTurningOn && !pipeline.speechSynthesisInitialized()) {
             _uiState.update {
-                it.copy(TTSWarningMessage = "TTS is not available.")
+                it.copy(ttsWarningMessage = "TTS is not available.")
             }
             return
         }
         _uiState.update {
             it.copy(
                 isTTSEnabled = !it.isTTSEnabled,
-                TTSWarningMessage = null
+                ttsWarningMessage = null
             )
         }
     }
@@ -727,7 +931,7 @@ class MainViewModel(application: Application, isTest: Boolean = false) : ViewMod
     /**
      * Clears the TTS warning message
      */
-    fun clearTTSWarningMessage() {
-        _uiState.update { it.copy(TTSWarningMessage = null) }
+    fun clearTtsWarningMessage() {
+        _uiState.update { it.copy(ttsWarningMessage = null) }
     }
 }

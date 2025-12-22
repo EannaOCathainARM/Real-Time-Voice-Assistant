@@ -13,7 +13,7 @@ project(llm-module
 include(FetchContent)
 
 set(LLM_MODULE_GIT_URL "https://gitlab.arm.com/kleidi/kleidi-examples/large-language-models")
-set(LLM_MODULE_GIT_SHA "9364181eaa1e747cf445a8f261eba2b7de4de030")
+set(LLM_MODULE_GIT_SHA "2957120e5d4024f070e39abb517d52e2a9be99d7")
 set(LLM_MODULE_SRC_DIR "${CMAKE_SOURCE_DIR}/llm-src")
 
 FetchContent_Declare(

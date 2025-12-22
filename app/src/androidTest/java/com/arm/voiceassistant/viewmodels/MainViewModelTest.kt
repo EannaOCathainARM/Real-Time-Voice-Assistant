@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: Copyright 2024-2025 Arm Limited and/or its affiliates <open-source-office@arm.com>
+ * SPDX-FileCopyrightText: Copyright 2024-2026 Arm Limited and/or its affiliates <open-source-office@arm.com>
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -93,15 +93,4 @@ class MainViewModelTest {
         assertEquals("", mainUiState?.value?.error?.message)
     }
 
-    /**
-     * Verifies that toggling performance metrics updates the UI state accordingly.
-     */
-    @Test
-    fun testTogglePerformanceMetrics() {
-        assertEquals(false, mainUiState?.value?.displayPerformance)
-        mainViewModel?.togglePerformanceMetrics()
-        assertEquals(true, mainUiState?.value?.displayPerformance)
-        mainViewModel?.togglePerformanceMetrics()
-        assertEquals(false, mainUiState?.value?.displayPerformance)
-    }
 }

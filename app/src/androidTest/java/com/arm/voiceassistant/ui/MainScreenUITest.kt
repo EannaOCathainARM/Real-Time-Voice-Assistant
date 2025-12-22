@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: Copyright 2024-2025 Arm Limited and/or its affiliates <open-source-office@arm.com>
+ * SPDX-FileCopyrightText: Copyright 2024-2026 Arm Limited and/or its affiliates <open-source-office@arm.com>
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -9,7 +9,9 @@ package com.arm.voiceassistant.ui
 import android.app.Application
 import android.content.Context
 import androidx.compose.ui.test.junit4.createComposeRule
+import androidx.compose.ui.test.onAllNodesWithContentDescription
 import androidx.compose.ui.test.onNodeWithContentDescription
+import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.test.platform.app.InstrumentationRegistry
 import com.arm.voiceassistant.ui.theme.VoiceAssistantTheme
@@ -17,7 +19,7 @@ import com.arm.voiceassistant.utils.AppContext
 import com.arm.voiceassistant.utils.Constants
 import com.arm.voiceassistant.viewmodels.MainUiState
 import com.arm.voiceassistant.viewmodels.MainViewModel
-import com.arm.voiceassistant.ScreenScaffold
+import com.arm.voiceassistant.screenScaffold
 import kotlinx.coroutines.flow.StateFlow
 import org.junit.After
 import org.junit.Before
@@ -59,14 +61,26 @@ class MainScreenUITest {
     @Before
     fun setContent() {
         composeTestRule.setContent {
-        VoiceAssistantTheme {
-            ScreenScaffold(
-                mainViewModel = mainViewModel!!
-            )
+            VoiceAssistantTheme {
+                screenScaffold(
+                    mainViewModel = mainViewModel!!
+                )
+            }
         }
     }
-}
 
+    /**
+     * Navigates from the Mode Selection screen into Chat mode and waits
+     * until the Chat UI is ready for interaction.
+     */
+    private fun enterChat() {
+        composeTestRule.onNodeWithText("Chat").performClick()
+        composeTestRule.waitUntil(timeoutMillis = 10_000) {
+            composeTestRule.onAllNodesWithContentDescription("record").fetchSemanticsNodes().isNotEmpty()
+                    || composeTestRule.onAllNodesWithContentDescription("cancel").fetchSemanticsNodes().isNotEmpty()
+                    || composeTestRule.onAllNodesWithContentDescription("cancelling").fetchSemanticsNodes().isNotEmpty()
+        }
+    }
 
     /**
      * Cleans up the ViewModel and application context after each test.
@@ -83,6 +97,7 @@ class MainScreenUITest {
      */
     @Test
     fun testCancelPipeline() {
+        enterChat()
         mainViewModel?.setContentState(Constants.ContentStates.Responding)
         assert(Constants.ContentStates.Responding == mainUiState?.value?.contentState)
         composeTestRule.onNodeWithContentDescription("cancel").performClick()
@@ -94,6 +109,7 @@ class MainScreenUITest {
      */
     @Test
     fun testCancelRecording() {
+        enterChat()
         mainViewModel?.pipeline!!.initRecorder()
         mainViewModel?.setContentState(Constants.ContentStates.Recording)
         assert(Constants.ContentStates.Recording == mainUiState?.value?.contentState)
@@ -108,6 +124,7 @@ class MainScreenUITest {
      */
     @Test
     fun testClearScreen() {
+        enterChat()
         mainViewModel?.setUserText("Populating user text box")
         composeTestRule.onNodeWithContentDescription("reset_context").performClick()
         assert("" == mainUiState?.value?.userText)

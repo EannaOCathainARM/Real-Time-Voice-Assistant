@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: Copyright 2024-2025 Arm Limited and/or its affiliates <open-source-office@arm.com>
+ * SPDX-FileCopyrightText: Copyright 2024-2026 Arm Limited and/or its affiliates <open-source-office@arm.com>
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -10,7 +10,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.height
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.outlined.SsidChart
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.outlined.Cached
 import androidx.compose.material3.CenterAlignedTopAppBar
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -28,21 +28,29 @@ import androidx.compose.ui.unit.dp
 import com.arm.voiceassistant.Pipeline
 import com.arm.voiceassistant.ui.theme.VoiceAssistantTheme
 
+/**
+ * Global reference to the active [Pipeline] instance.
+ *
+ * Used by the top app bar to trigger context reset actions.
+ * This reference is managed by the screen scaffold lifecycle.
+ */
 var pipeline: Pipeline? = null
 
 /**
  * Displays the top app bar with title and action buttons.
  * @param modifier Layout modifier
+ * @param onBack Callback to go back (Mode selection)
  * @param resetUserText Callback to clear user input and context
- * @param togglePerformance Callback to toggle performance metrics
+ * @param resetPerformanceMetrics Callback to reset perf metrics
+ * @param toggleTTS Callback to toggle TTS
+ * @param isTTSEnabled Current TTS state
  */
-
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun TopBar(
     modifier: Modifier = Modifier,
+    onBack: () -> Unit = {},
     resetUserText: () -> Unit = {},
-    togglePerformance: () -> Unit = {},
     resetPerformanceMetrics: () -> Unit = {},
     toggleTTS: () -> Unit = {},
     isTTSEnabled: Boolean = true
@@ -50,11 +58,12 @@ fun TopBar(
     CenterAlignedTopAppBar(
         modifier = modifier.height(40.dp),
         title = {
-            Row(modifier = Modifier.fillMaxHeight(),
+            Row(
+                modifier = Modifier.fillMaxHeight(),
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Text(
-                text = "Arm On-Device Assistant",
+                    text = "Arm On-Device Assistant",
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                     color = MaterialTheme.colorScheme.onPrimaryContainer
@@ -62,14 +71,13 @@ fun TopBar(
             }
         },
         colors = TopAppBarDefaults.topAppBarColors(
-            containerColor = MaterialTheme.colorScheme.secondary),
+            containerColor = MaterialTheme.colorScheme.secondary
+        ),
         navigationIcon = {
-            IconButton(onClick = {
-                togglePerformance()
-            }) {
+            IconButton(onClick = onBack) {
                 Icon(
-                    imageVector = Icons.Outlined.SsidChart,
-                    contentDescription = "toggle_performance",
+                    imageVector = Icons.AutoMirrored.Filled.ArrowBack,
+                    contentDescription = "back_to_mode_selection",
                     tint = MaterialTheme.colorScheme.onPrimaryContainer
                 )
             }
@@ -84,7 +92,8 @@ fun TopBar(
                 onClick = {
                     pipeline?.resetContext()
                     resetUserText()
-                    resetPerformanceMetrics()}
+                    resetPerformanceMetrics()
+                }
             ) {
                 Icon(
                     imageVector = Icons.Outlined.Cached,
@@ -97,33 +106,18 @@ fun TopBar(
 }
 
 /**
- * Top bar home preview
+ * Preview of the [TopBar] composable using the app theme.
  */
 @Preview
 @Composable
-private fun TopBarHomePreview() {
+private fun TopBarPreview() {
     VoiceAssistantTheme {
         TopBar(
+            onBack = {},
             resetUserText = {},
-            togglePerformance = {},
             toggleTTS = {},
             isTTSEnabled = true
         )
     }
 }
 
-/**
- * Top bar settings preview
- */
-@Preview
-@Composable
-private fun TopBarSettingsPreview() {
-    VoiceAssistantTheme {
-        TopBar(
-            resetUserText = {},
-            togglePerformance = {},
-            toggleTTS = {},
-            isTTSEnabled = true
-        )
-    }
-}

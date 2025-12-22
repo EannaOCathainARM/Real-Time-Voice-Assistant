@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: Copyright 2024-2025 Arm Limited and/or its affiliates <open-source-office@arm.com>
+ * SPDX-FileCopyrightText: Copyright 2024-2026 Arm Limited and/or its affiliates <open-source-office@arm.com>
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -70,7 +70,7 @@ class MainActivity : ComponentActivity() {
 
                     // Build the screen and return the mainViewModel for post init
                     // Pass imageUploadAction composable
-                    mainViewModel = ScreenScaffold()
+                    mainViewModel = screenScaffold()
 
                     // Check the permissions
                     requestPermissionLauncher.launch(permissions)

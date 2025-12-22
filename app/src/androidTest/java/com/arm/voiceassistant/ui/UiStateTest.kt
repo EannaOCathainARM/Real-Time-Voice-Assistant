@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: Copyright 2024-2025 Arm Limited and/or its affiliates <open-source-office@arm.com>
+ * SPDX-FileCopyrightText: Copyright 2024-2026 Arm Limited and/or its affiliates <open-source-office@arm.com>
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -9,7 +9,6 @@ package com.arm.voiceassistant.ui
 import androidx.compose.ui.test.assertTextContains
 import androidx.compose.ui.test.assertTextEquals
 import androidx.compose.ui.test.junit4.createComposeRule
-import androidx.compose.ui.test.onChildAt
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.onAllNodesWithText
@@ -29,6 +28,8 @@ import android.content.Context
 import org.junit.Before
 import org.mockito.Mockito
 import androidx.test.platform.app.InstrumentationRegistry
+import com.arm.voiceassistant.utils.TimingStats
+import androidx.compose.ui.test.onNodeWithTag
 
 /**
  * UI State tests for the MainScreen.
@@ -185,39 +186,13 @@ class UiStateTest {
         viewModel.messages.add(ChatMessage.UserText(userText))
         viewModel.messages.add(ChatMessage.AssistantText(responseText))
 
-        composeTestRule.waitForIdle()
+        composeTestRule.waitUntil(timeoutMillis = 5_000) {
+            composeTestRule.onAllNodesWithText(userText).fetchSemanticsNodes().isNotEmpty() &&
+                    composeTestRule.onAllNodesWithText(responseText).fetchSemanticsNodes().isNotEmpty()
+        }
+
         composeTestRule.onNodeWithText(userText).assertExists()
         composeTestRule.onNodeWithText(responseText).assertExists()
-    }
-
-    /**
-     * Verify that model metrics are displayed correctly when toggled.
-     */
-    @Test
-    fun testPerformanceMetricsVisible() {
-        val sttTime = "1.4"
-        val llmEncodeTPS = "8.3"
-        val llmDecodeTPS = "5.3"
-        val ttsTime = "0.7"
-
-        val model1metric =
-            composeTestRule.onNodeWithContentDescription("Speech recognition time")
-        val model2metric =
-            composeTestRule.onNodeWithContentDescription("LLM encode tokens/s")
-        val model3metric =
-            composeTestRule.onNodeWithContentDescription("LLM decode tokens/s")
-
-        launchScreenWithState(
-            MainUiState(
-                displayPerformance = true,
-                sttTime = sttTime,
-                llmEncodeTPS = llmEncodeTPS,
-                llmDecodeTPS = llmDecodeTPS
-            )
-        )
-        model1metric.onChildAt(1).assertTextEquals(sttTime)
-        model2metric.onChildAt(1).assertTextEquals(llmEncodeTPS)
-        model3metric.onChildAt(1).assertTextEquals(llmDecodeTPS)
     }
 
     /**
@@ -249,5 +224,86 @@ class UiStateTest {
 
         composeTestRule.onAllNodesWithText("Voice Assistant").onFirst().assertExists()
         composeTestRule.onNodeWithText(welcome).assertExists()
+    }
+
+    /**
+     * Verifies that performance timing (STT and Encode) is displayed
+     * beneath the user message bubble when timing data is present.
+     */
+    @Test
+    fun testUserTimingFooterVisible() {
+        val viewModel = launchScreenWithState(MainUiState())
+        viewModel.messages.clear()
+
+        viewModel.messages.add(
+            ChatMessage.UserText(
+                text = "Hello",
+                timing = TimingStats(
+                    sttTime = "1.2",
+                    llmEncodeTps = "10.5",
+                    llmDecodeTps = "-"
+                )
+            )
+        )
+
+        // Wait until timing footer is composed
+        composeTestRule.waitUntil(timeoutMillis = 5_000) {
+            composeTestRule
+                .onAllNodesWithText("STT", substring = true)
+                .fetchSemanticsNodes()
+                .isNotEmpty()
+        }
+
+        composeTestRule.onNodeWithText("Hello").assertExists()
+    }
+
+    /**
+     * Verifies that decode performance timing is displayed
+     * beneath the assistant message bubble when available.
+     */
+    @Test
+    fun testAssistantDecodeFooterVisible() {
+        val viewModel = launchScreenWithState(MainUiState())
+        viewModel.messages.clear()
+
+        viewModel.messages.add(
+            ChatMessage.AssistantText(
+                text = "Hi there",
+                timing = TimingStats(
+                    sttTime = "-",
+                    llmEncodeTps = "-",
+                    llmDecodeTps = "6.7"
+                )
+            )
+        )
+
+        composeTestRule.waitUntil(timeoutMillis = 5_000) {
+            composeTestRule
+                .onAllNodesWithText("Decode", substring = true)
+                .fetchSemanticsNodes()
+                .isNotEmpty()
+        }
+
+        composeTestRule.onNodeWithText("Hi there").assertExists()
+    }
+
+    /**
+     * Verifies that the top status strip contains memory and thermal metrics.
+     */
+    @OptIn(ExperimentalPermissionsApi::class)
+    @Test
+    fun testModelMetricsRowShowsMemoryAndThermal() {
+        val viewModel = MainViewModel(application, isTest = true)
+
+        composeTestRule.setContent {
+            VoiceAssistantTheme {
+                MainScreen(viewModel = viewModel)
+            }
+        }
+
+        composeTestRule.onNodeWithTag("model_metrics_row").assertExists()
+        composeTestRule.onNodeWithTag("metric_memory_available").assertExists()
+        composeTestRule.onNodeWithTag("metric_memory_used").assertExists()
+        composeTestRule.onNodeWithTag("metric_thermal").assertExists()
     }
 }

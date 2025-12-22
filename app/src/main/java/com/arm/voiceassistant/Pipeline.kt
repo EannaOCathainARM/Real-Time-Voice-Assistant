@@ -1,6 +1,6 @@
 
 /*
- * SPDX-FileCopyrightText: Copyright 2024-2025 Arm Limited and/or its affiliates <open-source-office@arm.com>
+ * SPDX-FileCopyrightText: Copyright 2024-2026 Arm Limited and/or its affiliates <open-source-office@arm.com>
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -15,7 +15,7 @@ import com.arm.stt.WhisperConfig
 import com.arm.voiceassistant.audio.AudioReader
 import com.arm.voiceassistant.speech.SpeechRecorder
 import com.arm.voiceassistant.speech.SpeechSynthesis
-import com.arm.voiceassistant.subscribers.ResponseSubscriber
+import kotlinx.coroutines.cancel
 import com.arm.voiceassistant.ui.composables.pipeline
 import com.arm.voiceassistant.utils.Constants
 import com.arm.voiceassistant.utils.Constants.VOICE_ASSISTANT_TAG
@@ -53,7 +53,11 @@ import java.io.FileOutputStream
  *        libraries to load other shared libs
  *
  */
-class Pipeline(modelPath: String, isTest: Boolean = false, private val sharedLibraryPath: String = "") {
+class Pipeline(
+    modelPath: String,
+    isTest: Boolean = false,
+    private val sharedLibraryPath: String = ""
+) : AutoCloseable {
     private var timers = PipelineTimers()                    // Various timers needed
     private var speechRecorder = SpeechRecorder()            // Audio recorder
     private var speechFilePath: String = ""                  // Path to the recorded audio file
@@ -91,6 +95,52 @@ class Pipeline(modelPath: String, isTest: Boolean = false, private val sharedLib
             initializeSTT(modelPath)
             initializeLLM(modelPath)
         }
+    }
+
+    /**
+     * Releases all resources owned by the voice assistant pipeline.
+     *
+     * Stops ongoing work, cancels audio and synthesis, resets the LLM context,
+     * cancels coroutines, and frees the native model.
+     * This method is synchronized and the instance must not be reused afterward.
+     */
+    @Synchronized
+    fun destroy() {
+        runCatching {
+            // Stop async encode job
+            lastImageEncodeJob?.cancel()
+            lastImageEncodeJob = null
+        }
+
+        // Stop audio / synthesis safely
+        runCatching { cancelRecording() }
+        runCatching { cancelSpeechSynthesis() }
+
+        // Reset context before freeing model
+        runCatching { resetContext() }
+
+        // Cancel pipeline-owned coroutine scope
+        runCatching { llmScope.cancel() }
+
+        // Free native LLM model explicitly (THIS IS THE IMPORTANT PART)
+        runCatching {
+            if (llmInitialized) {
+                llm.freeModel()
+                llmInitialized = false
+            }
+        }
+
+        // Clear global reference used by TopBar
+        runCatching {
+            if (pipeline === this) pipeline = null
+        }
+    }
+
+    /**
+     * AutoCloseable support so callers can use `pipeline.close()`.
+     */
+    override fun close() {
+        destroy()
     }
 
     /**
