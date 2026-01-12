@@ -427,8 +427,8 @@ class MainViewModel(application: Application, isTest: Boolean = false) : ViewMod
     fun cancelRecording() {
         if (pipeline.recorderInitialized()) {
             pipeline.cancelRecording()
-            setContentState(ContentStates.Idle)
         }
+        setContentState(ContentStates.Idle)
     }
 
     /**

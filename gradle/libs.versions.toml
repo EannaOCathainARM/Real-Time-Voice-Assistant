@@ -1,5 +1,5 @@
 #
-# SPDX-FileCopyrightText: Copyright 2024-2025 Arm Limited and/or its affiliates <open-source-office@arm.com>
+# SPDX-FileCopyrightText: Copyright 2024-2026 Arm Limited and/or its affiliates <open-source-office@arm.com>
 #
 # SPDX-License-Identifier: Apache-2.0
 #
@@ -19,6 +19,7 @@ junitVersion = "1.1.5"
 kotlin = "1.9.0"
 lifecycleRuntimeKtx = "2.8.6"
 mockitoAndroid = "5.8.0"
+androidxTestRules = "1.5.0"
 navigationRuntimeKtx = "2.8.3"
 navigationCompose = "2.8.3"
 navigationTesting = "2.8.3"
@@ -47,6 +48,7 @@ google-accompanist-permissions = { group = "com.google.accompanist", name = "acc
 google-gson = { group = "com.google.code.gson", name = "gson", version.ref = "gson"}
 junit = { group = "junit", name = "junit", version.ref = "junit" }
 mockito-android = { module = "org.mockito:mockito-android", version.ref = "mockitoAndroid" }
+androidx-test-rules = { module = "androidx.test:rules", version.ref = "androidxTestRules" }
 glide-compose = { group = "com.github.bumptech.glide", name = "compose", version.ref = "glideCompose" }
 
 [plugins]

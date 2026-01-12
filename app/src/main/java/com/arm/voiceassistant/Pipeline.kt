@@ -59,7 +59,12 @@ class Pipeline(
     private val sharedLibraryPath: String = ""
 ) : AutoCloseable {
     private var timers = PipelineTimers()                    // Various timers needed
-    private var speechRecorder = SpeechRecorder()            // Audio recorder
+    private val audioScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+
+    @get:androidx.annotation.VisibleForTesting
+    var speechRecorder: SpeechRecorder = SpeechRecorder(audioScope)
+        internal set
+
     private var speechFilePath: String = ""                  // Path to the recorded audio file
     private var stt = Whisper()                              // Speech-to-text engine
     public var llm = Llm()                                  // Language model
@@ -114,7 +119,10 @@ class Pipeline(
 
         // Stop audio / synthesis safely
         runCatching { cancelRecording() }
+        runCatching { speechRecorder.release() }
         runCatching { cancelSpeechSynthesis() }
+        runCatching { audioScope.cancel() }
+
 
         // Reset context before freeing model
         runCatching { resetContext() }
@@ -225,13 +233,6 @@ class Pipeline(
             Log.e(VOICE_ASSISTANT_TAG, msg)
             throw RuntimeException(msg + e.toString())
         }
-    }
-
-    /**
-     * Initialize the speech recorder to record the query
-     */
-    fun initRecorder() {
-        speechRecorder.initRecorder()
     }
 
     /**
@@ -353,7 +354,7 @@ class Pipeline(
      */
     suspend fun generateResponse(query: String)
     {
-        llm.submit(query)
+        sendToLlm(query)
     }
 
     /**
@@ -377,9 +378,10 @@ class Pipeline(
      * Wrapper Method to dispatch asynchronous query to Llm instance.
      * @param query : transcribed query string from speech
      */
-    private suspend fun sendToLlm(query: String) {
-
-        llm.submit(query)   // returns only after native workers finish
+    private suspend fun sendToLlm(query: String) = withContext(Dispatchers.Default) {
+        llmMutex.withLock {
+            llm.submit(query)   // returns only after native workers finish
+        }
     }
 
     /**

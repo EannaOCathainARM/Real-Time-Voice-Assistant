@@ -20,6 +20,7 @@ import com.arm.voiceassistant.utils.Constants
 import com.arm.voiceassistant.viewmodels.MainUiState
 import com.arm.voiceassistant.viewmodels.MainViewModel
 import com.arm.voiceassistant.screenScaffold
+import com.arm.voiceassistant.mocks.NoOpSpeechRecorder
 import kotlinx.coroutines.flow.StateFlow
 import org.junit.After
 import org.junit.Before
@@ -52,6 +53,8 @@ class MainScreenUITest {
         AppContext.getInstance().context = appContext
 
         mainViewModel = MainViewModel(application, true)
+        // Replace the recorder in the pipeline with a no-op stub
+        mainViewModel?.pipeline?.speechRecorder = NoOpSpeechRecorder(initialized = true)
         mainUiState = mainViewModel?.uiState
     }
 
@@ -110,12 +113,17 @@ class MainScreenUITest {
     @Test
     fun testCancelRecording() {
         enterChat()
-        mainViewModel?.pipeline!!.initRecorder()
+        // Note: We do not need to init/start recording: NoOpSpeechRecorder already injected in setup and this test is to check UI state transitions
         mainViewModel?.setContentState(Constants.ContentStates.Recording)
         assert(Constants.ContentStates.Recording == mainUiState?.value?.contentState)
         composeTestRule.onNodeWithContentDescription("cancel_recording").performClick()
         composeTestRule.onNodeWithContentDescription("confirm_button").performClick()
+
+        composeTestRule.waitUntil(timeoutMillis = 1_000) {
+            mainUiState?.value?.contentState == Constants.ContentStates.Idle
+        }
         assert(Constants.ContentStates.Idle == mainUiState?.value?.contentState)
+
         assert("" == mainUiState?.value?.responseText)
     }
 
