@@ -81,13 +81,11 @@ class Pipeline(modelPath: String, errorFlow: MutableSharedFlow<String>, isTest: 
     private var lastImageEncodeJob: Job? = null
     private var isTestMode = isTest
 
-    // User config file for llm, default is llama.cpp
+    // User config file for llm, resolved per framework (files now generated in module dirs)
     private var configFileName: String = Utils.getLlmConfig(llmFramework)
-
     private var pipelineErrorFlow = errorFlow
-
     // User config file name stt
-    private var configFileNameSTT = "whisperConfigUser.json"
+    private var configFileNameSTT = "whisperTextConfig.json"
 
     /**
      * Initialize speech recognition, large language model and speech synthesis
@@ -166,7 +164,10 @@ class Pipeline(modelPath: String, errorFlow: MutableSharedFlow<String>, isTest: 
 
         runCatching {
 
-                sttContext = stt.initContext("$modelPath/${Constants.STT_MODEL_NAME}")
+                sttContext = stt.initContext(
+                    "$modelPath/${Constants.STT_MODEL_NAME}",
+                    sharedLibraryPath
+                )
                 val configFileWhisper = File("$modelPath/$configFileNameSTT")
                 var whisperParams = WhisperConfig()
                 if (configFileWhisper.exists()) {

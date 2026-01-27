@@ -486,11 +486,12 @@ object Utils {
     fun getLlmConfig(llmFramework: String):String
     {
         return when (llmFramework) {
-            "llama.cpp" -> "llamaVisionConfigUser.json"
-            "onnxruntime-genai" -> "onnxTextConfigUser.json"
-            "mnn" -> "mnnVisionConfigUser.json"
-            "mediapipe" -> "mediapipeTextConfigUser.json"
-            else -> "llamaVisionConfigUser.json"
+            // Config files are now produced in module folders (llm/stt) during build
+            "llama.cpp"         -> "llamaVisionConfig-qwen2-vl-2B.json"
+            "onnxruntime-genai" -> "onnxrtTextConfig-phi-4.json"
+            "mnn"               -> "mnnVisionConfig-qwen2.5-3B.json"
+            "mediapipe"         -> "mediapipeTextConfig-gemma-2B.json"
+            else -> "llamaVisionConfig-qwen2-vl-2B.json"
         }
     }
 }

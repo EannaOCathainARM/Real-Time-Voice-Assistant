@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: Copyright 2024-2025 Arm Limited and/or its affiliates <open-source-office@arm.com>
+ * SPDX-FileCopyrightText: Copyright 2024-2026 Arm Limited and/or its affiliates <open-source-office@arm.com>
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -13,7 +13,8 @@ def localSttModelsFolder = file(project.ext.STT_MODELS_DIR).absolutePath
 
 def deviceFolder = file(project.ext.DEVICE_FOLDER).absolutePath
 def adbPushResourcesScript = file(project.ext.PUSH_MODELS_PY).absolutePath
-def localConfigFolder = file(project.ext.CONFIG_DIR).absolutePath
+def localConfigFolderLlm = file(project.ext.CONFIG_DIR_LLM).absolutePath
+def localConfigFolderStt = file(project.ext.CONFIG_DIR_STT).absolutePath
 def localImagesFolder = file(project.ext.IMAGES_DIR).absolutePath
 def llmFramework = rootProject.extensions.extraProperties.get("LLM_FRAMEWORK") as String
 
@@ -62,14 +63,16 @@ tasks.register("copySttModelsWithAdb") {
     }
 }
 
-// Push config files after both model pushes
+// Push config files (LLM and STT) after both model pushes
 tasks.register("copyConfigsWithAdb") {
     group = "model-sync"
     description = "Pushes configuration files to device after models"
 
     doLast {
-        def checkDir = new File(localConfigFolder)
-        pushWithAdb(checkDir, localConfigFolder, "Configs", [])
+        def checkDirLlm = new File(localConfigFolderLlm)
+        pushWithAdb(checkDirLlm, localConfigFolderLlm, "LLM Configs", [])
+        def checkDirStt = new File(localConfigFolderStt)
+        pushWithAdb(checkDirStt, localConfigFolderStt, "STT Configs", []) 
     }
 }
 
@@ -78,7 +81,7 @@ tasks.register('copyImagesWithAdb') {
     description = "Pushes test images to device after native build"
 
     doLast {
-        def checkDir = new File(localConfigFolder)
+        def checkDir = new File(localImagesFolder)
         pushWithAdb(checkDir, localImagesFolder, "Test images", [])
     }
 }

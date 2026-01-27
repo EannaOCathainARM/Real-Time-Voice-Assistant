@@ -12,7 +12,8 @@ plugins {
 project.ext.set("STT_MODELS_DIR", "$projectDir/../stt/stt-src/resources_downloaded/models/")
 project.ext.set("LLM_MODELS_DIR", "$projectDir/../llm/llm-src/resources_downloaded/models/")
 project.ext.set("IMAGES_DIR", "$projectDir/../resources/images/")
-project.ext.set("CONFIG_DIR", "$projectDir/src/model_configuration_files/")
+project.ext.set("CONFIG_DIR_LLM", "$projectDir/../llm/llm-src/model_configuration_files/")
+project.ext.set("CONFIG_DIR_STT", "$projectDir/../stt/stt-src/model_configuration_files/")
 project.ext.set("DEVICE_FOLDER", "/storage/emulated/0/Android/data/com.arm.voiceassistant/files/Download/")
 project.ext.set("PUSH_MODELS_PY", "$projectDir/pushAppResources.py")
 

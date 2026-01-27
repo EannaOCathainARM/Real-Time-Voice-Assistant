@@ -63,7 +63,7 @@ class ErrorMessageTest {
         val requiredFiles = listOf(
             llmConfig,
             BuildConfig.LLM_FRAMEWORK,
-            "whisperConfigUser.json",
+            "whisperTextConfig.json",
             "couple.bmp"
         )
 

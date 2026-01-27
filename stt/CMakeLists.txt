@@ -1,5 +1,5 @@
 #
-# SPDX-FileCopyrightText: Copyright 2025 Arm Limited and/or its affiliates <open-source-office@arm.com>
+# SPDX-FileCopyrightText: Copyright 2025-2026 Arm Limited and/or its affiliates <open-source-office@arm.com>
 #
 # SPDX-License-Identifier: Apache-2.0
 #
@@ -13,7 +13,7 @@ project(stt-module
 include(FetchContent)
 
 set(STT_MODULE_GIT_URL "https://gitlab.arm.com/kleidi/kleidi-examples/speech-to-text")
-set(STT_MODULE_GIT_SHA "ee8f4da7")
+set(STT_MODULE_GIT_SHA "4a60a7c9fa5a7cf8becbc5fc2e4b9e2f1d3ff035")
 set(STT_MODULE_SRC_DIR "${CMAKE_SOURCE_DIR}/stt-src")
 
 if(${ANDROID_ABI} STREQUAL "arm64-v8a")
