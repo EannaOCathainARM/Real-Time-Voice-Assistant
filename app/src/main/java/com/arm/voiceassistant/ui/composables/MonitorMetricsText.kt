@@ -75,7 +75,7 @@ fun MemoryUsageText(
 }
 
 /**
- * Displays the currently available memory in gigabytes as a text label.
+ * Displays the available system memory in gigabytes as a text label.
  *
  * @param textStyle Style applied to the rendered text
  * @param modifier Optional modifier applied to the Text (e.g. test tags)
@@ -84,7 +84,7 @@ fun MemoryUsageText(
 @Composable
 fun MemoryAvailableText(
     textStyle: TextStyle = TextStyle(),
-    modifier: Modifier = Modifier,
+    modifier: Modifier,
     intervalSeconds: Long = 3L
 ) {
     val context = LocalContext.current

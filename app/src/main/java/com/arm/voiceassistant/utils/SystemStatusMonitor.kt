@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: Copyright 2025 Arm Limited and/or its affiliates <open-source-office@arm.com>
+ * SPDX-FileCopyrightText: Copyright 2025-2026 Arm Limited and/or its affiliates <open-source-office@arm.com>
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -37,7 +37,7 @@ import android.os.PowerManager
  */
 class SystemStatusMonitor(
     context: Context,
-    private val intervalSeconds: Long = 5L // configurable, default 3 seconds
+    private val intervalSeconds: Long = 3L // configurable, default 3 seconds
 ) {
 
     private val appContext = context.applicationContext
@@ -50,7 +50,6 @@ class SystemStatusMonitor(
 
     private val _memoryUsageGb = MutableStateFlow(0.0f)
     val memoryUsageGb: StateFlow<Float> = _memoryUsageGb.asStateFlow()
-
     private val _memoryAvailableGb = MutableStateFlow(0.0f)
     val memoryAvailableGb: StateFlow<Float> = _memoryAvailableGb.asStateFlow()
 
@@ -94,7 +93,7 @@ class SystemStatusMonitor(
      * Rounds a floating-point value down to two decimal places.
      *
      * @param x Value to be rounded.
-     * @return Value rounded down to two decimal places.
+     * @return Value truncated down to two decimal places.
      */
     fun roundDownTo2Decimals(x: Float): Float = floor(x * 100f) / 100f
 
@@ -109,8 +108,14 @@ class SystemStatusMonitor(
         val pid = android.os.Process.myPid()
         val memoryInfoArray = activityManager.getProcessMemoryInfo(intArrayOf(pid))
         val memoryInfo = memoryInfoArray.firstOrNull() ?: return 0.0f
-        val memoryUsageKB = memoryInfo.totalPrivateClean + memoryInfo.totalPrivateDirty + memoryInfo.totalSharedClean + memoryInfo.totalSharedDirty
-        val memoryUsageGB = roundDownTo2Decimals(memoryUsageKB.toFloat() / (1024 * 1024))
+        val memoryUsageKB = memoryInfo.totalPrivateClean.toLong() +
+            memoryInfo.totalPrivateDirty.toLong() +
+            memoryInfo.totalSharedClean.toLong() +
+            memoryInfo.totalSharedDirty.toLong()
+        // Convert KiB to GiB (binary units: 1024^2 KiB per GiB) and truncate to 2 decimals.
+        val memoryUsageGB = roundDownTo2Decimals(
+            (memoryUsageKB.toDouble() / Utils.KIB_PER_GIB).toFloat()
+        )
         Log.d(VOICE_ASSISTANT_TAG,"Current memory usage $memoryUsageGB GB")
         return memoryUsageGB
     }
@@ -124,7 +129,10 @@ class SystemStatusMonitor(
         val memoryInfo = ActivityManager.MemoryInfo()
         activityManager.getMemoryInfo(memoryInfo)
         val memoryFreeB = memoryInfo.availMem
-        val memoryFreeGB = roundDownTo2Decimals(memoryFreeB.toFloat() / (1024 * 1024 * 1024))
+        // Convert bytes to GiB (binary units: 1024^3 bytes per GiB) and truncate to 2 decimals.
+        val memoryFreeGB = roundDownTo2Decimals(
+            (memoryFreeB.toDouble() / Utils.BYTES_PER_GIB).toFloat()
+        )
         Log.d(VOICE_ASSISTANT_TAG,"Current memory available $memoryFreeGB GB")
         return memoryFreeGB
     }

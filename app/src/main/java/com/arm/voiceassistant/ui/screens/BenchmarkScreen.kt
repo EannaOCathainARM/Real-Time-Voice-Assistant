@@ -59,6 +59,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.arm.voiceassistant.BuildConfig
 import com.arm.voiceassistant.ui.composables.BaseDropdown
+import com.arm.voiceassistant.ui.composables.ModelMetrics
 import com.arm.voiceassistant.viewmodels.MainViewModel
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -152,6 +153,20 @@ fun BenchmarkScreen(
             verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
             // Top padding requested
+            Spacer(Modifier.height(8.dp))
+
+            // Top status strip (icons only) - mirrors chat screen metrics
+            Surface(
+                modifier = Modifier.fillMaxWidth(),
+                color = MaterialTheme.colorScheme.surface.copy(alpha = 0.12f),
+                tonalElevation = 0.dp,
+                shape = MaterialTheme.shapes.large
+            ) {
+                Box(modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp)) {
+                    ModelMetrics()
+                }
+            }
+
             Spacer(Modifier.height(8.dp))
 
             // Intro

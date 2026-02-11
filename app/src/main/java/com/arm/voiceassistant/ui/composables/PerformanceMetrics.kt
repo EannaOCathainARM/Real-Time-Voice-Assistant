@@ -50,7 +50,7 @@ fun ModelMetrics(
             .testTag("model_metrics_row"),
         verticalAlignment = Alignment.CenterVertically
     ) {
-        // Memory: used / available
+        // Memory: RTVA used / available
         StatusItem(icon = Icons.Outlined.Memory) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 MemoryUsageText(

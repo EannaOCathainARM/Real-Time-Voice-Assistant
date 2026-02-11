@@ -117,6 +117,9 @@ class AppContext private constructor() {
     var context: Context? = null
 }
 object Utils {
+    const val KIB_PER_GIB = 1024.0 * 1024.0
+    const val BYTES_PER_GIB = 1024.0 * 1024.0 * 1024.0
+
     data class ChatConfig(
         val systemPrompt: String,
         val applyDefaultChatTemplate: Boolean,
